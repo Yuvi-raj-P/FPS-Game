@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class Gun : MonoBehaviour
 {
@@ -6,7 +7,8 @@ public class Gun : MonoBehaviour
     public float range = 100f;
 
     public Camera fpsCam;
-    public ParticleSystem muzzleFlash;
+    public GameObject muzzleFlash;
+    public GameObject impactEffect;
 
     void Update()
     {
@@ -22,6 +24,7 @@ public class Gun : MonoBehaviour
         if (Physics.Raycast(fpsCam.transform.position, fpsCam.transform.forward, out hit, range))
         {
             Debug.Log(hit.transform);
+            Instantiate(impactEffect, hit.point, Quaternion.LookRotation(hit.normal));
             
         }
     }
