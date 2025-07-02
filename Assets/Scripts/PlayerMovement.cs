@@ -6,6 +6,8 @@ using UnityEngine.InputSystem;
 public class PlayerMovement : MonoBehaviour
 {
     public CharacterController controller;
+    private PlayerInput playerInput;
+    private PlayerInput.OnFootActions onFoot;
     public float speed = 12f;
     public float gravity = -9.81f * 2;
     public float jumpHeight = 3f;
@@ -20,6 +22,21 @@ public class PlayerMovement : MonoBehaviour
     private Vector2 moveInput;
     private bool jumpInput;
 
+    void Awake()
+    {
+        playerInput = new PlayerInput();
+        onFoot = playerInput.OnFoot;
+    }
+    private void OnEnable()
+    {
+        onFoot.Enable();
+    }
+    
+    private void OnDisable()
+    {
+        onFoot.Disable();
+    }
+
     void Update()
     {
         isGrounded = Physics.CheckSphere(groundCheck.position, groundDistance, groundMask);
@@ -28,8 +45,8 @@ public class PlayerMovement : MonoBehaviour
             velocity.y = -2f;
         }
 
-        moveInput = InputSystem.actions.FindAction("Move").ReadValue<Vector2>();
-        jumpInput = InputSystem.actions.FindAction("Jump").WasPressedThisFrame();
+        moveInput = onFoot.Movement.ReadValue<Vector2>();
+        jumpInput = onFoot.Jump.WasPressedThisFrame();
 
         float x = moveInput.x;
         float z = moveInput.y;

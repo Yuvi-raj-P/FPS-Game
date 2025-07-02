@@ -5,8 +5,10 @@ public class PlayerMotor : MonoBehaviour
     private CharacterController controller;
     private Vector3 playerVelocity;
     public float speed = 5f;
-    public float gravity = -9.81f;
+    public float gravity = -9.81f * 2;
     public float jumpHeight = 3f;
+
+    bool sprinting = false;
     private bool isGrounded;
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
@@ -40,6 +42,18 @@ public class PlayerMotor : MonoBehaviour
         if (isGrounded)
         {
             playerVelocity.y = Mathf.Sqrt(jumpHeight * -3.0f * gravity);
+        }
+    }
+    public void Sprint()
+    {
+        sprinting = !sprinting;
+        if (sprinting)
+        {
+            speed = 12f;
+        }
+        else
+        {
+            speed = 8f;
         }
     }
 }
