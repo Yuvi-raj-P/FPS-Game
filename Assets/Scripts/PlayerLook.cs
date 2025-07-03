@@ -6,6 +6,16 @@ public class PlayerLook : MonoBehaviour
     private float xRotation = 0f;
     public float xSensitivity = 30f;
     public float ySensitivity = 30f;
+    void Awake()
+    {
+        #if UNITY_EDITOR
+            xSensitivity = 300f;
+            ySensitivity = 300f;
+        #else
+            xSensitivity = 50f;
+            ySensitivity = 50f;
+        #endif
+    }
 
     void Start()
     {
