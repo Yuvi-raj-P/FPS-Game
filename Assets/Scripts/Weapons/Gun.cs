@@ -6,10 +6,13 @@ public class Gun : MonoBehaviour
 {
     [Header("Gun Stats")]
     public float damage = 10f;
+    public float scopedDamage;
+    public float scopedDamageMultiplier = 1.3f;
     public float range = 100f;
     public float fireRate = 15f;
     public float reloadTime = 2f;
     public float currentReloadTime { get; private set; }
+    public bool isScoped = false;
 
     [Header("Ammo")]
     public int magazineSize = 30;
@@ -33,8 +36,16 @@ public class Gun : MonoBehaviour
 
     private Animator animator;
 
+    //Dream Mode
+    public ParticleSystem dreamModeParticles;
+    public AudioSource dreamModeAudio;
+    public float dreamModeDuration = 5f;
+    public float dreamMode;
+
+
     void Awake()
     {
+        scopedDamage = damage * scopedDamageMultiplier;
         muzzleFlash.SetActive(false);
         animator = GetComponent<Animator>();
     }
@@ -53,8 +64,31 @@ public class Gun : MonoBehaviour
     }
     void Update()
     {
+        Debug.DrawRay(fpsCam.transform.position, fpsCam.transform.forward * range, Color.red);
         if (IsReloading)
+        {
+            if (isScoped)
+            {
+                isScoped = false;
+                if (animator != null)
+                {
+                    damage = scopedDamage;
+                    animator.SetBool("Scoping", isScoped);
+                }
+            }
             return;
+        }
+        bool isAiming = Mouse.current.rightButton.isPressed;
+        if (isScoped != isAiming)
+        {
+            isScoped = isAiming;
+            if (animator != null)
+            {
+                animator.SetBool("Scoping", isScoped);
+                damage = isScoped ? 20f : 10f;
+            }
+        }
+        
         if (currentAmmo < magazineSize && Keyboard.current.rKey.wasPressedThisFrame)
         {
             StartCoroutine(Reload());
@@ -119,12 +153,21 @@ public class Gun : MonoBehaviour
         if (Physics.Raycast(fpsCam.transform.position, fpsCam.transform.forward, out hit, range))
         {
             Debug.Log("Hit: " + hit.transform.name);
+            
+
+            Damage damageScript = hit.transform.GetComponent<Damage>();
+            if (damageScript != null)
+            {
+                damageScript.TakeDamage(damage);
+            }
             GameObject impactGO = Instantiate(impactEffect, hit.point, Quaternion.LookRotation(hit.normal));
             Destroy(impactGO, 2f);
         }
         float randomDuration = Random.Range(minMuzzleFlashDuration, maxMuzzleFlashDuration);
         yield return new WaitForSeconds(randomDuration);
         muzzleFlash.SetActive(false);
+
+        
     }
 }
 

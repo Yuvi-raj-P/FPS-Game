@@ -7,19 +7,24 @@ public class PlayerMotor : MonoBehaviour
     public float speed = 5f;
     public float gravity = -9.81f * 2;
     public float jumpHeight = 3f;
-
     bool sprinting = false;
     private bool isGrounded;
+    public float walkSpeed = 8f;
+    public float sprintSpeed = 12f;
+    public float scopeSpeed = 3f;
+    private bool isScoped = false;
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
         controller = GetComponent<CharacterController>();
+        speed = walkSpeed;
 
     }
 
     // Update is called once per frame
     void Update()
     {
+
         isGrounded = controller.isGrounded;
     }
 
@@ -35,7 +40,7 @@ public class PlayerMotor : MonoBehaviour
             playerVelocity.y = -2f;
         }
         controller.Move(playerVelocity * Time.deltaTime);
-        Debug.Log(playerVelocity.y);
+       
     }
     public void Jump()
     {
@@ -44,16 +49,26 @@ public class PlayerMotor : MonoBehaviour
             playerVelocity.y = Mathf.Sqrt(jumpHeight * -3.0f * gravity);
         }
     }
-    public void Sprint()
+    public void Sprint(bool isSprinting)
     {
-        sprinting = !sprinting;
-        if (sprinting)
+        sprinting = isSprinting;
+        if (!isScoped)
         {
-            speed = 12f;
+            speed = isSprinting ? sprintSpeed : walkSpeed;
+        }
+    }
+    public void SetScoped(bool scoped)
+    {
+        isScoped = scoped;
+        if (scoped)
+        {
+            speed = scopeSpeed;
         }
         else
         {
-            speed = 8f;
+            speed = sprinting ? sprintSpeed : walkSpeed;
         }
+        isScoped = scoped;
+        
     }
 }

@@ -10,6 +10,8 @@ public class InputManager : MonoBehaviour
 
     private PlayerLook look;
 
+    public WeaponSwitching weaponSwitching;
+
     void Awake()
     {
         playerInput = new PlayerInput();
@@ -17,8 +19,6 @@ public class InputManager : MonoBehaviour
         motor = GetComponent<PlayerMotor>();
         look = GetComponent<PlayerLook>();
         onFoot.Jump.performed += ctx => motor.Jump();
-
-        onFoot.Sprint.performed += ctx => motor.Sprint();
     }
     void FixedUpdate()
     {
@@ -45,6 +45,12 @@ public class InputManager : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        
+        if (weaponSwitching != null)
+        {
+            motor.SetScoped(weaponSwitching.weaponScoped);
+        }
+
+        motor.Sprint(onFoot.Sprint.IsPressed());
+
     }
 }

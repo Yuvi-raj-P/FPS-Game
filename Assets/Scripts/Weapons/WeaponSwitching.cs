@@ -10,6 +10,7 @@ public class WeaponSwitching : MonoBehaviour
     [Header("UI")]
     public TextMeshProUGUI ammoText;
     public GameObject reloadTime;
+    public bool weaponScoped = false;
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
@@ -22,6 +23,7 @@ public class WeaponSwitching : MonoBehaviour
     void Update()
     {
         Gun currentGun = transform.GetChild(selectedWeapon).GetComponent<Gun>();
+        weaponScoped = currentGun.isScoped;
         if (ammoText != null && currentGun != null)
         {
             if (currentGun.IsReloading)
@@ -35,7 +37,7 @@ public class WeaponSwitching : MonoBehaviour
                 reloadTime.SetActive(false);
                 ammoText.text = $"{currentGun.currentAmmo} | {currentGun.magazineSize}";
             }
-            
+
         }
 
         if (currentGun != null && currentGun.IsReloading)
