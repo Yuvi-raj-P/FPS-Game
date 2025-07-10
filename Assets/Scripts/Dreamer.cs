@@ -8,9 +8,46 @@ public class Dreamer : MonoBehaviour
     public float rollForce = 5f;
     public float torqueForce = 5f;
     public float throwForceMultiplier = 1f;
+
+    //Effects and Cinematic stuff
+    public GameObject eyesOpenImage;
+    public GameObject eyesClosedImage;
+    public GameObject eyesShockedImage;
+
     void Start()
     {
+        if (eyesOpenImage != null)
+        {
+            eyesOpenImage.SetActive(true);
+        }
+        if (eyesClosedImage != null)
+        {
+            eyesClosedImage.SetActive(false);
+
+        }
+        if (eyesShockedImage != null)
+        {
+            eyesShockedImage.SetActive(false);
+        }
+        else
+        {
+            Debug.LogWarning("MISSING DREAMER IMAGES BRO FIX THIS ASPAPSADJFIASD!");
+        }
+        StartCoroutine(CloseEyesSequence());
         StartCoroutine(StartRollingDice());
+    }
+    IEnumerator CloseEyesSequence()
+    {
+        yield return new WaitForSeconds(4f);
+        if (eyesOpenImage != null)
+        {
+            eyesOpenImage.SetActive(false);
+        }
+        if (eyesClosedImage != null)
+        {
+            eyesClosedImage.SetActive(true);
+        }
+
     }
     IEnumerator StartRollingDice()
     {
@@ -50,29 +87,7 @@ public class Dreamer : MonoBehaviour
     }
     void Update()
     {
-        /*if (Input.GetKeyDown(KeyCode.W))
-        {
-            RollDice();
-        }
-        if (Input.GetKeyDown(KeyCode.E))
-        {
-            if (dicePrefab != null && spawnPoint != null)
-            {
-                GameObject die = Instantiate(dicePrefab, spawnPoint.position, Random.rotation);
-                Rigidbody rb = die.GetComponent<Rigidbody>();
-                if (rb != null)
-                {
-                    Vector3 throwDirection = (spawnPoint.forward + (Vector3.up * 1f));
-                    throwDirection += new Vector3(
-                        Random.Range(-0.5f, 0.5f),
-                        Random.Range(-0.1f, 0.4f),
-                        Random.Range(-0.5f, 0.5f)
-                    );
-                    rb1.AddForce(throwDirection.normalized * rollForce * throwForceMultiplier, ForceMode.Impulse);
-                    rb1.AddTorque(Random.insideUnitSphere * torqueForce, ForceMode.Impluse);
-
-                }
-            }
-        }*/
+        
+    
     }
 }

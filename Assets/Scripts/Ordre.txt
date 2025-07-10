@@ -1,0 +1,46 @@
+1) Play on the main menu has been clicked
+2) Its all good then glich effect and goes to sleep so enemies spawn
+3) For every 50 to a 120 seconds dice roll from the sky with new effects
+4) If the health of the player is 0 then he dead
+
+Things to work on:
+Map and Map on the UI
+Proedual Environment
+Effects
+Enemy animations
+the dice rolling timing and the random player waking up
+- Fog of thoughts
+- Dreams Catcher
+- Blast ray of some sort I glich
+- Gravity Changer
+- Sprint animation effect
+- Sounds
+- World Tilt
+
+Enemies and Thier Abilities
+
+- 1. Shapless sleepers
+ - distored limbs
+ - follow player and attack
+ - attack player
+
+-2. Hole Faced
+  - Stylized mannequins
+  - swirl faces
+   - Freeze when looked at
+   - Screen blurs when they near
+
+- 3. Random Shapless
+  - Iridescant shader
+  shatter when particles when killed
+
+- 4. Floating eyes
+  - they fly floating animation
+  - have to shoot upwards to get this fixed
+
+
+The guy wakes up randomly when this happens you weapon is lost and the whole world becomes dreamy
+
+- Extra health is given there and there with Heart monsters
+- Dreamkey help with immunity against dices
+
