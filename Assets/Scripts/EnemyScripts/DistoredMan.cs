@@ -19,18 +19,29 @@ public class DistoredMan : MonoBehaviour
 
     public Image darknessImage;
 
+    //Blackout variables
+    public float minLookTimeBeforeBlackout = 2f;
+    public float maxLookTimeBeforeBlackout = 5f;
+    public float blackoutDuration = 1f;
+    private bool isInBlackout = false;
+    private float currentLookTime = 0f;
+    private float timeUntilNextBlackout = 0f;
+    private Coroutine blackoutCoroutine;
+    public int raycastResolution = 5;
+    public float blackoutSpeed = 2f;
+    public float normalSpeed = 3.5f;
+
     //Flicker variables
-    public float flickerInterval = 3f;
+    /*public float flickerInterval = 3f;
     public float flickerDuration = 0.5f;
     public float flickerSpeed = 0.1f;
     private bool isFlickering = false;
     private bool canMoveDuringFlicker = false;
-    private Coroutine flickerCoroutine;
-    public int raycastResolution = 5;
-    
-
+    private bool hasHadFirstBlackout = false;
+    private Coroutine flickerCoroutine;*/
     void Start()
     {
+        target = PlayerManager.Instance.player.transform;
         if (target == null)
         {
             target = GameObject.FindGameObjectWithTag("Player").GetComponent<Transform>();
@@ -40,29 +51,53 @@ public class DistoredMan : MonoBehaviour
 
         if (darknessImage != null)
         {
-            //StartCoroutine(FlickerCycle());
+            Color color = darknessImage.color;
+            color.a = 0f;
+            darknessImage.color = color;
+
         }
+        timeUntilNextBlackout = Random.Range(minLookTimeBeforeBlackout, maxLookTimeBeforeBlackout);
     }
     void Update()
     {
 
         isBeingWatched = IsPlayerLookingAtMe();
 
-        if (!isBeingWatched)
+        if (isBeingWatched && !isInBlackout /*&& !isFlickering*/)
+        {
+            currentLookTime += Time.deltaTime;
+
+            if (currentLookTime >= timeUntilNextBlackout && darknessImage != null)
+            {
+                if (blackoutCoroutine == null)
+                {
+                    blackoutCoroutine = StartCoroutine(BlackoutEffect());
+                }
+            }
+
+        }
+        else if (!isBeingWatched /*&& !isFlickering*/)
+        {
+            currentLookTime = 0f;
+            timeUntilNextBlackout = Random.Range(minLookTimeBeforeBlackout, maxLookTimeBeforeBlackout);
+
+        }
+        if (!isBeingWatched || isInBlackout /*|| (isFlickering && canMoveDuringFlicker)*/)
         {
             float distance = Vector3.Distance(target.position, transform.position);
             if (distance <= lookRadius)
             {
                 agent.SetDestination(target.position);
+                FaceTarget();
                 if (distance <= agent.stoppingDistance)
+            {
+                FaceTarget();
+                if (Time.time >= nextAttackTime)
                 {
-                    FaceTarget();
-                    if (Time.time >= nextAttackTime)
-                    {
-                        Attack();
-                        nextAttackTime = Time.time + 1f / attackRate;
-                    }
+                    Attack();
+                    nextAttackTime = Time.time + 1f / attackRate;
                 }
+            }
             }
         }
         else
@@ -75,6 +110,76 @@ public class DistoredMan : MonoBehaviour
             Die();
         }
     }
+    IEnumerator BlackoutEffect()
+    {
+        isInBlackout = true;
+        agent.speed = blackoutSpeed;
+        Color color = darknessImage.color;
+        color.a = 1f;
+        darknessImage.color = color;
+
+        yield return new WaitForSeconds(blackoutDuration);
+
+        color.a = 0f;
+        darknessImage.color = color;
+
+        agent.speed = normalSpeed;
+
+        isInBlackout = false;
+        currentLookTime = 0f;
+        timeUntilNextBlackout = Random.Range(minLookTimeBeforeBlackout, maxLookTimeBeforeBlackout);
+        blackoutCoroutine = null;
+
+        /*if (!hasHadFirstBlackout)
+        {
+            hasHadFirstBlackout = true;
+            StartCoroutine(FlickerCycle());
+        }*/
+    }
+    // After testing, the flicker effect is not going to be used in the game
+    //Adds unnecssary confusing to the player and some error is causing damage without knowing
+    /*IEnumerator FlickerCycle()
+    {
+        while (true)
+        {
+            yield return new WaitForSeconds(flickerInterval);
+
+            if (isBeingWatched && !isInBlackout && darknessImage != null)
+            {
+                if (flickerCoroutine == null)
+                {
+                    flickerCoroutine = StartCoroutine(FlickerEffect());
+                }
+            }
+        }
+    }
+    IEnumerator FlickerEffect()
+    {
+        isFlickering = true;
+        float flickerTimer = 0f;
+
+        while (flickerTimer < flickerDuration)
+        {
+            float alpha = Mathf.PingPong(Time.time / flickerSpeed, 1f);
+
+            canMoveDuringFlicker = alpha > 0.7f;
+
+            Color color = darknessImage.color;
+            color.a = alpha * 0.8f;
+            darknessImage.color = color;
+
+            flickerTimer += Time.deltaTime;
+            yield return null;
+        }
+
+        Color finalColor = darknessImage.color;
+        finalColor.a = 0f;
+        darknessImage.color = finalColor;
+
+        isFlickering = false;
+        canMoveDuringFlicker = false;
+        flickerCoroutine = null;
+    }*/
 
     bool IsPlayerLookingAtMe()
     {
@@ -272,8 +377,8 @@ public class DistoredMan : MonoBehaviour
 
             }
         }
-    }
-    IEnumerator FlickerCycle()
+    }*/
+    /*IEnumerator FlickerCycle()
     {
         while (true)
         {
@@ -281,6 +386,7 @@ public class DistoredMan : MonoBehaviour
             if (isBeingWatched && darknessImage != null)
             {
                 flickerCoroutine = StartCoroutine(FlickerEffect());
+
             }
         }
     }*/
@@ -296,9 +402,22 @@ public class DistoredMan : MonoBehaviour
 
             Color color = darknessImage.color;
             color.a = alpha * 0.8f;
-            
-        }
-    }*/
+            darknessImage.color = color;
 
-    
+            flickerTimer += Time.deltaTime;
+            yield return null;
+        }
+
+        Color finalColor = darknessImage.color;
+        finalColor.a = 0f;
+        darknessImage.color = finalColor;
+
+        isFlickering = false;
+        canMoveDuringFlicker = false;
+
+    }*/
+    void VariableSpeed()
+    {
+        
+    }
 }

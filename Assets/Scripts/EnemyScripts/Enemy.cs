@@ -16,6 +16,7 @@ public class Enemy : MonoBehaviour
 
     void Start()
     {
+        target = PlayerManager.Instance.player.transform;
         if (target == null)
         {
             target = GameObject.FindGameObjectWithTag("Player").GetComponent<Transform>();
