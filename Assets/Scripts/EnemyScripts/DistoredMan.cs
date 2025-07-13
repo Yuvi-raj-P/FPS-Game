@@ -1,9 +1,11 @@
 using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
+using UnityEngine.AI;
 
 public class DistoredMan : MonoBehaviour
 {
+    [Header("General Settings")]
     public float lookRadius = 10f;
     public Transform target;
     public int attackDamage = 25;
@@ -11,25 +13,22 @@ public class DistoredMan : MonoBehaviour
     private float nextAttackTime = 0f;
     public float health = 100f;
 
+    [Header("Vision Settings")]
+
     public float viewAngle = 60f;
     public float maxViewDistance = 15f;
 
-    private UnityEngine.AI.NavMeshAgent agent;
-    private bool isBeingWatched = false;
-
-    public Image darknessImage;
-
-    //Blackout variables
+    [Header("Blackout Mechanic")]
     public float minLookTimeBeforeBlackout = 2f;
     public float maxLookTimeBeforeBlackout = 5f;
     public float blackoutDuration = 1f;
-    private bool isInBlackout = false;
-    private float currentLookTime = 0f;
-    private float timeUntilNextBlackout = 0f;
-    private Coroutine blackoutCoroutine;
-    public int raycastResolution = 5;
     public float blackoutSpeed = 2f;
     public float normalSpeed = 3.5f;
+
+    private NavMeshAgent agent;
+    private bool isBeingWatched = false;
+    private float currentLookTime = 0f;
+    private float timeUntilNextBlackout = 0f;
 
     //Flicker variables
     /*public float flickerInterval = 3f;
@@ -47,15 +46,8 @@ public class DistoredMan : MonoBehaviour
             target = GameObject.FindGameObjectWithTag("Player").GetComponent<Transform>();
             Debug.LogWarning("Target not assigned, using Player as target. FIX THIS RIGHT NOW BRO");
         }
-        agent = GetComponent<UnityEngine.AI.NavMeshAgent>();
-
-        if (darknessImage != null)
-        {
-            Color color = darknessImage.color;
-            color.a = 0f;
-            darknessImage.color = color;
-
-        }
+        agent = GetComponent<NavMeshAgent>();
+        agent.speed = normalSpeed;
         timeUntilNextBlackout = Random.Range(minLookTimeBeforeBlackout, maxLookTimeBeforeBlackout);
     }
     void Update()
@@ -63,79 +55,50 @@ public class DistoredMan : MonoBehaviour
 
         isBeingWatched = IsPlayerLookingAtMe();
 
-        if (isBeingWatched && !isInBlackout /*&& !isFlickering*/)
+        if (isBeingWatched && !UIManager.IsBlackoutActive)
         {
             currentLookTime += Time.deltaTime;
 
-            if (currentLookTime >= timeUntilNextBlackout && darknessImage != null)
+            if (currentLookTime >= timeUntilNextBlackout)
             {
-                if (blackoutCoroutine == null)
-                {
-                    blackoutCoroutine = StartCoroutine(BlackoutEffect());
-                }
+                UIManager.Instance.TriggerBlackout(blackoutDuration);
+                currentLookTime = 0f;
+                timeUntilNextBlackout = Random.Range(minLookTimeBeforeBlackout, maxLookTimeBeforeBlackout);
             }
-
         }
-        else if (!isBeingWatched /*&& !isFlickering*/)
+        else if (!isBeingWatched)
         {
             currentLookTime = 0f;
-            timeUntilNextBlackout = Random.Range(minLookTimeBeforeBlackout, maxLookTimeBeforeBlackout);
-
         }
-        if (!isBeingWatched || isInBlackout /*|| (isFlickering && canMoveDuringFlicker)*/)
+        else
         {
+            //There is nothing in here; Intentionally left empty
+        }
+
+        if (!isBeingWatched || UIManager.IsBlackoutActive)
+        {
+            agent.speed = UIManager.IsBlackoutActive ? blackoutSpeed : normalSpeed;
             float distance = Vector3.Distance(target.position, transform.position);
             if (distance <= lookRadius)
             {
                 agent.SetDestination(target.position);
                 FaceTarget();
                 if (distance <= agent.stoppingDistance)
-            {
-                FaceTarget();
-                if (Time.time >= nextAttackTime)
                 {
-                    Attack();
-                    nextAttackTime = Time.time + 1f / attackRate;
+                    if (Time.time >= nextAttackTime)
+                    {
+                        Attack();
+                        nextAttackTime = Time.time + 1f / attackRate;
+                    }
                 }
-            }
             }
         }
         else
         {
             agent.SetDestination(transform.position);
         }
-
-        if (health <= 0f)
-        {
-            Die();
-        }
     }
-    IEnumerator BlackoutEffect()
-    {
-        isInBlackout = true;
-        agent.speed = blackoutSpeed;
-        Color color = darknessImage.color;
-        color.a = 1f;
-        darknessImage.color = color;
 
-        yield return new WaitForSeconds(blackoutDuration);
-
-        color.a = 0f;
-        darknessImage.color = color;
-
-        agent.speed = normalSpeed;
-
-        isInBlackout = false;
-        currentLookTime = 0f;
-        timeUntilNextBlackout = Random.Range(minLookTimeBeforeBlackout, maxLookTimeBeforeBlackout);
-        blackoutCoroutine = null;
-
-        /*if (!hasHadFirstBlackout)
-        {
-            hasHadFirstBlackout = true;
-            StartCoroutine(FlickerCycle());
-        }*/
-    }
     // After testing, the flicker effect is not going to be used in the game
     //Adds unnecssary confusing to the player and some error is causing damage without knowing
     /*IEnumerator FlickerCycle()
@@ -232,18 +195,6 @@ public class DistoredMan : MonoBehaviour
             Debug.LogWarning("Target is null, FIX THIS ASAP");
         }
 
-    }
-    void Die()
-    {
-        this.gameObject.SetActive(false);
-    }
-    void TakeDamage(float amount)
-    {
-        health -= amount;
-        if (health <= 0f)
-        {
-            Die();
-        }
     }
     bool IsPlayerLookingAtMeAcc()
     {
