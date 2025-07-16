@@ -3,10 +3,7 @@ using System.Collections.Generic;
 using UnityEngine.AI;
 using Unity.AI.Navigation;
 using System.Collections;
-using UnityEngine.UIElements;
-using UnityEngine.Rendering;
-using UnityEditor.Analytics;
-using UnityEngine.Scripting.APIUpdating;
+
 
 public class ProceduralWorld : MonoBehaviour
 {
@@ -16,14 +13,17 @@ public class ProceduralWorld : MonoBehaviour
     public int maxPropsPerChunk = 4;
     public float maxPropSize = 2f;
 
-    public float navMeshUpdateDelay = 0.5f;
+    [Header("NavMeshSettings")]
+    public float navMeshUpdateDelay = 2f;
     public bool useAsyncNavMeshUpdate = true;
+    public bool enableNavMeshUpdates = true;
 
     private NavMeshSurface navMeshSurface;
     private Vector2Int currentPlayerChunk;
     private Dictionary<Vector2Int, GameObject> activeChunks = new Dictionary<Vector2Int, GameObject>();
     private bool isUpdatingNavMesh = false;
     private Coroutine navMeshUpdateCoroutine;
+    private HashSet<Vector2Int> pendingChunks = new HashSet<Vector2Int>();
 
     void Start()
     {
@@ -65,6 +65,7 @@ public class ProceduralWorld : MonoBehaviour
     {
         currentPlayerChunk = GetChunkCoordFromPosition(player.position);
         List<Vector2Int> chunksToRemove = new List<Vector2Int>(activeChunks.Keys);
+        bool hasNewChunks = false;
 
         for (int x = -renderDistance; x <= renderDistance; x++)
         {
@@ -79,6 +80,8 @@ public class ProceduralWorld : MonoBehaviour
                 else
                 {
                     GenerateChunk(chunkCoord);
+                    pendingChunks.Add(chunkCoord);
+                    hasNewChunks = true;
                 }
             }
         }
@@ -88,13 +91,18 @@ public class ProceduralWorld : MonoBehaviour
             {
                 Destroy(activeChunks[chunkCoord]);
                 activeChunks.Remove(chunkCoord);
+                pendingChunks.Remove(chunkCoord);
+                hasNewChunks = true;
             }
         }
-        if (navMeshUpdateCoroutine != null)
+        if (hasNewChunks && enableNavMeshUpdates)
         {
-            StopCoroutine(navMeshUpdateCoroutine);
+            if (navMeshUpdateCoroutine != null)
+            {
+                StopCoroutine(navMeshUpdateCoroutine);
+            }
+            navMeshUpdateCoroutine = StartCoroutine(DelayedNavMeshUpdate());
         }
-        navMeshUpdateCoroutine = StartCoroutine(DelayedNavMeshUpdate());
     }
     IEnumerator DelayedNavMeshUpdate()
     {
@@ -107,27 +115,48 @@ public class ProceduralWorld : MonoBehaviour
     IEnumerator UpdateNavMeshCoroutine()
     {
         isUpdatingNavMesh = true;
-        var agentStates = new Dictionary<NavMeshAgent, AgentState>();
+        Debug.Log("Starting NavMesh update...");
+
+        Enemy[] enemies = FindObjectsByType<Enemy>(FindObjectsSortMode.None);
         NavMeshAgent[] agents = FindObjectsByType<NavMeshAgent>(FindObjectsSortMode.None);
+        foreach (var enemy in enemies)
+        {
+            if (enemy != null)
+            {
+                enemy.OnNavMeshUpdateStarted();
+            }
+        }
+
+        var agentStates = new Dictionary<NavMeshAgent, AgentState>();
 
         foreach (var agent in agents)
         {
-            if (agent != null && agent.isActiveAndEnabled && agent.isOnNavMesh)
+            if (agent != null && agent.isActiveAndEnabled)
             {
-                agentStates[agent] = new AgentState
+                AgentState state = new AgentState
                 {
                     position = agent.transform.position,
-                    velocity = agent.velocity,
-                    destination = agent.destination,
-                    hasPath = agent.hasPath,
-                    isStopped = agent.isStopped,
-
+                    velocity = Vector3.zero,
+                    destination = Vector3.zero,
+                    hasPath = false,
+                    isStopped = agent.isStopped
                 };
+                if (agent.isOnNavMesh)
+                {
+                    state.velocity = agent.velocity;
+                    state.hasPath = agent.hasPath;
+
+                    if (agent.hasPath)
+                    {
+                        state.destination = agent.destination;
+                    }
+                }
+                agentStates[agent] = state;
                 agent.isStopped = true;
             }
         }
 
-        yield return new WaitForEndOfFrame();
+        yield return new WaitForSeconds(0.1f);
 
         if (useAsyncNavMeshUpdate)
         {
@@ -142,7 +171,7 @@ public class ProceduralWorld : MonoBehaviour
             navMeshSurface.BuildNavMesh();
         }
 
-        yield return new WaitForEndOfFrame();
+        yield return new WaitForSeconds(0.2f);
 
         foreach (var kvp in agentStates)
         {
@@ -151,35 +180,81 @@ public class ProceduralWorld : MonoBehaviour
 
             if (agent != null && agent.isActiveAndEnabled)
             {
-                if (agent.Warp(state.position))
+                bool warpSuccessful = false;
+                Vector3 targetPosition = state.position;
+
+                if (NavMesh.SamplePosition(state.position, out NavMeshHit hit, 5f, NavMesh.AllAreas))
+                {
+                    targetPosition = hit.position;
+                    warpSuccessful = agent.Warp(targetPosition);
+                }
+                if (!warpSuccessful)
+                {
+                    RaycastHit groundHit;
+                    Vector3 rayStart = state.position + Vector3.up * 10f;
+
+                    if (Physics.Raycast(rayStart, Vector3.down, out groundHit, 20f))
+                    {
+                        Vector3 groundPosition = groundHit.point;
+
+                        if (NavMesh.SamplePosition(groundPosition, out NavMeshHit navHit, 2f, NavMesh.AllAreas))
+                        {
+                            warpSuccessful = agent.Warp(navHit.position);
+                        }
+                    }
+                }
+                if (warpSuccessful)
                 {
                     agent.isStopped = state.isStopped;
 
                     if (state.hasPath && !state.isStopped)
                     {
-                        agent.SetDestination(state.destination);
+                        StartCoroutine(DelayedSetDestination(agent, state.destination));
                     }
                 }
                 else
                 {
-                    NavMeshHit hit;
-                    if (NavMesh.SamplePosition(state.position, out hit, 1f, NavMesh.AllAreas))
-                    {
-                        agent.Warp(hit.position);
-                        agent.isStopped = state.isStopped;
-
-                        if (state.hasPath && !state.isStopped)
-                        {
-                            agent.SetDestination(state.destination);
-                        }
-                    }
+                    Debug.LogWarning($"Failed to warp agent {agent.name} to valid NavMesh position");
+                    agent.enabled = false;
+                    StartCoroutine(ReenableAgentAfterDelay(agent, 1f));
                 }
+            }
+        }
+
+        yield return new WaitForSeconds(0.1f);
+
+        foreach (var enemy in enemies)
+        {
+            if (enemy != null)
+            {
+                enemy.OnNavMeshUpdateCompleted();
             }
         }
 
         isUpdatingNavMesh = false;
         Debug.Log("NavMesh updated successfully.");
+    }
+    
+    IEnumerator ReenableAgentAfterDelay(NavMeshAgent agent, float delay)
+    {
+        yield return new WaitForSeconds(delay);
+        if (agent != null)
+        {
+            agent.enabled = true;
 
+            if (NavMesh.SamplePosition(agent.transform.position, out NavMeshHit hit, 5f, NavMesh.AllAreas))
+            {
+                agent.Warp(hit.position);
+            }
+        }
+
+    }
+    IEnumerator DelayedSetDestination(NavMeshAgent agent, Vector3 destination) {
+        yield return new WaitForEndOfFrame();
+        if (agent != null && agent.isActiveAndEnabled && agent.isOnNavMesh)
+        {
+            agent.SetDestination(destination);
+        }
     }
 
     void GenerateChunk(Vector2Int coord)
@@ -213,7 +288,6 @@ public class ProceduralWorld : MonoBehaviour
         activeChunks.Add(coord, chunkObject);
 
     }
-
     private class AgentState
     {
         public Vector3 position;
@@ -221,8 +295,6 @@ public class ProceduralWorld : MonoBehaviour
         public Vector3 destination;
         public bool hasPath;
         public bool isStopped;
-        
-    }
-    
 
+    }
 }

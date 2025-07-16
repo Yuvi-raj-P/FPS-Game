@@ -2036,6 +2036,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c60dc2771a6724d428f987b6f8451c13, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  player: {fileID: 0}
+  chunkSize: 30
+  renderDistance: 5
+  maxPropsPerChunk: 4
+  maxPropSize: 2
+  navMeshUpdateDelay: 0.5
+  useAsyncNavMeshUpdate: 1
+  enableNavMeshUpdates: 1
 --- !u!1 &1292992281
 GameObject:
   m_ObjectHideFlags: 0
@@ -3144,10 +3152,6 @@ PrefabInstance:
       propertyPath: m_Name
       value: Player
       objectReference: {fileID: 0}
-    - target: {fileID: 2861098281945818559, guid: 5cbaef17d19e44f699de994b224aa432, type: 3}
-      propertyPath: m_Layer
-      value: 7
-      objectReference: {fileID: 0}
     - target: {fileID: 4850350004931815868, guid: 5cbaef17d19e44f699de994b224aa432, type: 3}
       propertyPath: ammoText
       value: 
@@ -3156,18 +3160,6 @@ PrefabInstance:
       propertyPath: reloadTime
       value: 
       objectReference: {fileID: 1485012346}
-    - target: {fileID: 6080208436762209090, guid: 5cbaef17d19e44f699de994b224aa432, type: 3}
-      propertyPath: m_LocalScale.x
-      value: 0.3
-      objectReference: {fileID: 0}
-    - target: {fileID: 6080208436762209090, guid: 5cbaef17d19e44f699de994b224aa432, type: 3}
-      propertyPath: m_LocalScale.y
-      value: 0.3
-      objectReference: {fileID: 0}
-    - target: {fileID: 6080208436762209090, guid: 5cbaef17d19e44f699de994b224aa432, type: 3}
-      propertyPath: m_LocalScale.z
-      value: 0.3
-      objectReference: {fileID: 0}
     - target: {fileID: 7023199204472377352, guid: 5cbaef17d19e44f699de994b224aa432, type: 3}
       propertyPath: m_LocalPosition.x
       value: -4.928
@@ -3207,14 +3199,6 @@ PrefabInstance:
     - target: {fileID: 7023199204472377352, guid: 5cbaef17d19e44f699de994b224aa432, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 8008614304013884426, guid: 5cbaef17d19e44f699de994b224aa432, type: 3}
-      propertyPath: m_CullingMask.m_Bits
-      value: 55
-      objectReference: {fileID: 0}
-    - target: {fileID: 8682041038612377796, guid: 5cbaef17d19e44f699de994b224aa432, type: 3}
-      propertyPath: m_Enabled
-      value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
