@@ -28,6 +28,11 @@ public class Enemy : MonoBehaviour
 
     void Update()
     {
+        if (target == null || !agent.enabled || !agent.isOnNavMesh)
+        {
+            return;
+
+        }
         float distance = Vector3.Distance(target.position, transform.position);
         if (distance <= lookRadius)
         {

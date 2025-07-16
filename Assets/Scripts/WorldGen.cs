@@ -1,4 +1,5 @@
-using UnityEngine;
+/*using UnityEngine;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine.AI;
 using Unity.AI.Navigation;
@@ -14,8 +15,8 @@ public class WorldGen : MonoBehaviour
 
     [Header("Terrain Settings")]
     public Material terrainMaterial;
-    public float noiseScale = 0.1f;
-    public float heightMultiplier = 5f;
+    //public float noiseScale = 0.1f;
+    //public float heightMultiplier = 5f;
 
 
     [Header("NavMesh Settings")]
@@ -23,16 +24,21 @@ public class WorldGen : MonoBehaviour
     private Transform playerTransform;
     private Dictionary<Vector2Int, GameObject> activeChunks = new Dictionary<Vector2Int, GameObject>();
     private Vector2Int currentPlayerChunk;
-    private Vector2Int lastPlayerChunk;
+    private bool isBaking = false;
+
     void Start()
     {
-        if (PlayerManager.Instance != null)
+        if (PlayerManager.Instance != null && PlayerManager.Instance.player != null)
         {
             playerTransform = PlayerManager.Instance.player.transform;
         }
         else
         {
-            playerTransform = GameObject.FindGameObjectWithTag("Player").transform;
+            GameObject playerObject = GameObject.FindGameObjectWithTag("Player");
+            if (playerObject != null)
+            {
+                playerTransform = playerObject.transform;
+            }
         }
         if (playerTransform == null)
         {
@@ -48,22 +54,34 @@ public class WorldGen : MonoBehaviour
                 navMeshSurface = gameObject.AddComponent<NavMeshSurface>();
             }
         }
-        UpdateChunks();
-        Invoke("BakeNavMesh", 0.5f);
+        StartCoroutine(InitialGeneration());
+    }
+    private IEnumerator InitialGeneration()
+    {
+        currentPlayerChunk = GetChunkCoordinate(playerTransform.position);
+        for (int x = -renderDistance; x <= renderDistance; x++)
+        {
+            for (int z = -renderDistance; z <= renderDistance; z++)
+            {
+                GenerateChunk(currentPlayerChunk + new Vector2Int(x, z));
+            }
+        }
+        yield return new WaitForSeconds(1f);
+        StartCoroutine(BakeNavMeshAsync());
     }
 
     void Update()
     {
-        if (playerTransform == null)
+        if (playerTransform == null || isBaking)
         {
             return;
         }
-        currentPlayerChunk = GetChunkCoordinate(playerTransform.position);
-        if (currentPlayerChunk != lastPlayerChunk)
+        Vector2Int newPlayerChunk = GetChunkCoordinate(playerTransform.position);
+        if (newPlayerChunk != currentPlayerChunk)
         {
-            UpdateChunks();
-            lastPlayerChunk = currentPlayerChunk;
-            Invoke("BakeNavMesh", 0.1f);
+            currentPlayerChunk = newPlayerChunk;
+            StartCoroutine(UpdateChunksAndBake());
+
         }
     }
     Vector2Int GetChunkCoordinate(Vector3 worldPosition)
@@ -72,43 +90,53 @@ public class WorldGen : MonoBehaviour
         int z = Mathf.FloorToInt(worldPosition.z / chunkSize);
         return new Vector2Int(x, z);
     }
-    void UpdateChunks()
+    IEnumerator UpdateChunksAndBake()
     {
+        isBaking = true;
+        HashSet<Vector2Int> requiredChunks = new HashSet<Vector2Int>();
         for (int x = -renderDistance; x <= renderDistance; x++)
         {
             for (int z = -renderDistance; z <= renderDistance; z++)
             {
-                Vector2Int chunkCoord = currentPlayerChunk + new Vector2Int(x, z);
-                if (!activeChunks.ContainsKey(chunkCoord))
-                {
-                    GenerateChunk(chunkCoord);
-                }
+                requiredChunks.Add(currentPlayerChunk + new Vector2Int(x, z));
             }
         }
+
+        foreach (var chunkCoord in requiredChunks)
+        {
+            if (!activeChunks.ContainsKey(chunkCoord))
+            {
+                GenerateChunk(chunkCoord);
+            }
+        }
+        yield return new WaitForEndOfFrame();
+
+        yield return StartCoroutine(BakeNavMeshAsync());
+
         List<Vector2Int> chunksToRemove = new List<Vector2Int>();
         foreach (var chunk in activeChunks)
         {
-            Vector2Int chunkCoord = chunk.Key;
-            float distance = Vector2Int.Distance(chunkCoord, currentPlayerChunk);
-            if (distance > renderDistance + 1)
+            if (!requiredChunks.Contains(chunk.Key))
             {
-                chunksToRemove.Add(chunkCoord);
+                chunksToRemove.Add(chunk.Key);
             }
         }
         foreach (var chunkCoord in chunksToRemove)
         {
-            if (activeChunks.ContainsKey(chunkCoord))
+            if (activeChunks.TryGetValue(chunkCoord, out GameObject chunkObject))
             {
-                DestroyImmediate(activeChunks[chunkCoord]);
+                Destroy(chunkObject);
                 activeChunks.Remove(chunkCoord);
             }
         }
+        isBaking = false;
     }
     void GenerateChunk(Vector2Int chunkCoord)
     {
         Vector3 chunkWorldPos = new Vector3(chunkCoord.x * chunkSize, 0, chunkCoord.y * chunkSize);
         GameObject chunkObject = new GameObject($"Chunk_{chunkCoord.x}_{chunkCoord.y}");
         chunkObject.transform.parent = transform;
+        chunkObject.transform.position = chunkWorldPos;
 
         if (terrainPrefabs != null && terrainPrefabs.Length > 0)
         {
@@ -130,17 +158,19 @@ public class WorldGen : MonoBehaviour
         GameObject terrainQuad = GameObject.CreatePrimitive(PrimitiveType.Plane);
         terrainQuad.name = "TerrainQuad";
         terrainQuad.transform.parent = chunkParent.transform;
-        terrainQuad.transform.position = chuckWorldPos;
+        terrainQuad.transform.position = chunkWorldPos;
         terrainQuad.transform.localScale = Vector3.one * (chunkSize / 10f);
 
         if (terrainMaterial != null)
         {
             terrainQuad.GetComponent<Renderer>().material = terrainMaterial;
         }
+
+        terrainQuad.layer = 0;
     }
     void GenerateProps(GameObject chunkParent, Vector3 chunkPos)
     {
-        if (propPrefabs = null || propPrefabs.Length == 0)
+        if (propPrefabs == null || propPrefabs.Length == 0)
         {
             GenerateRandomCubes(chunkParent, chunkPos);
             return;
@@ -151,8 +181,9 @@ public class WorldGen : MonoBehaviour
         {
             Vector3 randomPos = chunkPos + new Vector3(Random.Range(0, chunkSize), 0, Random.Range(0, chunkSize));
             GameObject propPrefab = propPrefabs[Random.Range(0, propPrefabs.Length)];
-            GameObject prop = Instantiate(propPrefab, randomPos, Quaternion.identity, chunckParent.transform);
-            prop.transform.rotation = Quaternion.Euler(0, Random.Ramge(0, 360), 0);
+            GameObject prop = Instantiate(propPrefab, randomPos, Quaternion.identity, chunkParent.transform);
+
+            prop.transform.rotation = Quaternion.Euler(0, Random.Range(0, 360), 0);
             float scale = Random.Range(0.8f, 1.2f);
             prop.transform.localScale = Vector3.one * scale;
         }
@@ -162,14 +193,21 @@ public class WorldGen : MonoBehaviour
         int cubeCount = Random.Range(0, Mathf.RoundToInt(chunkSize * propDensity));
         for (int i = 0; i < cubeCount; i++)
         {
-            Vector3 randomPos = chunkPos + new Vector3(Random.Range(0, chunkSize), 1f, Random.Range(0, chunkSize));
+            Vector3 randomPos = chunkPos + new Vector3(
+            Random.Range(2f, chunkSize - 2f),
+            1f,
+            Random.Range(2f, chunkSize - 2f)
+        );
+
             GameObject cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
             cube.name = "RandomProp";
-            cube.transform.position = chunkParent.transform;
+            cube.transform.parent = chunkParent.transform;
             cube.transform.position = randomPos;
             cube.transform.rotation = Quaternion.Euler(0, Random.Range(0, 360), 0);
+
             float scale = Random.Range(0.5f, 2f);
             cube.transform.localScale = Vector3.one * scale;
+
 
             Renderer renderer = cube.GetComponent<Renderer>();
             renderer.material.color = new Color(Random.value, Random.value, Random.value);
@@ -177,15 +215,52 @@ public class WorldGen : MonoBehaviour
         }
     }
 
-    void BakeNavMesh()
+    private IEnumerator BakeNavMeshAsync()
     {
-        if (navMeshSurface != null)
+        if (navMeshSurface == null)
         {
-            navMeshSurface.BuildNavMesh();
-            Debug.Log("NavMesh baked successfully.");
+            yield break;
         }
-    }
+        Debug.Log("Starting NavMesh bake");
+        NavMeshAgent[] agents = FindObjectsOfType<NavMeshAgent>(FindObjectsSortMode.None);
+        foreach (var agent in agents)
+        {
+            if (agent != null && agent.gameObject.activeInHierarchy && agent.enabled)
+            {
+                agent.isStopped = true;
+            }
+        }
+        yield return null;
 
+        AsyncOperation bakeOperation = navMeshSurfave.UpdateNavMesh(navMeshSurface.navMeshData);
+
+        while (!bakeOperation.isDone)
+        {
+            yield return null;
+        }
+        Degub.Log("NavMesh baked successfully");
+
+        foreach (var agent in agents)
+        {
+            if (agent != null && agent.gameobject.activeInHierarchy)
+            {
+                if (navMeshSurface.SamplePosition(agent.transform.position, out NavMeshHit hit, 2.0f, NavMesh.AllAread))
+                {
+                    agent.Warp(hit.position);
+                    agent.isStopped = false;
+                }
+                else
+                {
+                    Debug.LogWarning($"Could not fine a valid NavMesh position for agent {agent.name}. It might b stuck.");
+                }
+            }
+        }
+
+    }
+    
+   
+    /* Related to terrain management with enemies spawning and Player chunks
+       Commented because the enemy generation was moved to WaveManager
     public Vector2Int CurrentPlayerChunk
     {
         get { return currentPlayerChunk; }
@@ -220,6 +295,7 @@ public class WorldGen : MonoBehaviour
                 }
             }
         }
+
     }
     /* Shifted this code to a seperate script WaveManager so dont bother with this
     void GenerateEnemies(GameObject chunkParent, Vector3 chunkPos)
@@ -246,5 +322,6 @@ public class WorldGen : MonoBehaviour
             enemy.tag = "Enemy";
 
         }
-    }*/
+    }
 }
+*/
