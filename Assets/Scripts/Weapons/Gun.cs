@@ -26,7 +26,7 @@ public class Gun : MonoBehaviour
     public Camera fpsCam;
     public GameObject muzzleFlash;
     public GameObject impactEffect;
-    
+    public PlayerLook playerLook;
 
     [Header("Muzzle Flash")]
     public float minMuzzleFlashDuration = 0.05f;
@@ -70,6 +70,7 @@ public class Gun : MonoBehaviour
             if (isScoped)
             {
                 isScoped = false;
+                if (playerLook != null) playerLook.SetZoom(false);
                 if (animator != null)
                 {
                     damage = scopedDamage;
@@ -82,6 +83,10 @@ public class Gun : MonoBehaviour
         if (isScoped != isAiming)
         {
             isScoped = isAiming;
+            if (playerLook != null)
+            {
+                playerLook.SetZoom(isScoped);
+            }
             if (animator != null)
             {
                 animator.SetBool("Scoping", isScoped);

@@ -1,16 +1,10 @@
 using UnityEngine;
-using System.Collections;
+using UnityEngine.AI;
 
-public class Enemy : MonoBehaviour
+public class ManualFollow : MonoBehaviour
 {
-    public float lookRadius = 10f;
-    public Transform target;
-    public int attackDamage = 10;
-    public float health = 100f;
-    public int attackRate = 1;
-
-    [Header("Manual Follow")]
-    public float maxSpeed = 5f;
+    public Transform player;
+    public float maxSpeed = 10f;
     public float baseAcceleration = 2f;
     public float stoppingDistance = 2f;
     public float accelerationMultiplier = 1f;
@@ -23,40 +17,23 @@ public class Enemy : MonoBehaviour
     public float avoidanceForce = 5f;
     public float sideRayDistance = 2f;
 
-    private float nextAttackTime = 0f;
     private float currentSpeed;
-    private float verticalVelocity;
+    public float verticalVelocity;
     private Vector3 avoidanceDirection;
-
-
+    private float avoidanceTimer;
 
     void Start()
     {
-        target = PlayerManager.Instance.player.transform;
-        if (target == null)
-        {
-            target = GameObject.FindGameObjectWithTag("Player").GetComponent<Transform>();
-            Debug.LogWarning("Target not assigned, using Player as target. FIX THIS BS ASAP");
-        }
+        player = PlayerManager.Instance.player.transform;
         currentSpeed = 0f;
         verticalVelocity = 0f;
         avoidanceDirection = Vector3.zero;
-
     }
 
     void Update()
     {
-        if (target == null)
-        {
-            return;
-        }
         HandleGrounding();
-        HandleMovementAndCombat();
-        if (health <= 0f)
-        {
-            Die();
-        }
-
+        HandleMovement();
     }
     void HandleGrounding()
     {
@@ -81,38 +58,25 @@ public class Enemy : MonoBehaviour
             transform.Translate(0, verticalVelocity * Time.deltaTime, 0, Space.World);
         }
     }
-    void HandleMovementAndCombat()
+    void HandleMovement()
     {
-        float distance = Vector3.Distance(target.position, transform.position);
+        float distanceToPlayer = Vector3.Distance(transform.position, player.position);
 
-        if (distance <= lookRadius)
+        if (distanceToPlayer > stoppingDistance)
         {
-            if (distance > stoppingDistance)
+            Vector3 directionToPlayer = (player.position - transform.position).normalized;
+            directionToPlayer.y = 0;
+
+            Vector3 finalDirection = CalculateMovementDirection(directionToPlayer);
+
+            float distanceBasedAcceleration = baseAcceleration * (distanceToPlayer * accelerationMultiplier);
+            currentSpeed += distanceBasedAcceleration * Time.deltaTime;
+            currentSpeed = Mathf.Min(currentSpeed, maxSpeed);
+
+            if (finalDirection != Vector3.zero)
             {
-                Vector3 directionToPlayer = (target.position - transform.position).normalized;
-                directionToPlayer.y = 0;
-                Vector3 finalDirection = CalculateMovementDirection(directionToPlayer);
-
-                float distanceBasedAcceleration = baseAcceleration * distance * accelerationMultiplier;
-                currentSpeed += distanceBasedAcceleration * Time.deltaTime;
-                currentSpeed = Mathf.Min(currentSpeed, maxSpeed);
-
-                if (finalDirection != Vector3.zero)
-                {
-                    transform.LookAt(transform.position + finalDirection);
-                    transform.Translate(finalDirection * currentSpeed * Time.deltaTime, Space.World);
-                }
-            }
-            else
-            {
-                currentSpeed = Mathf.Lerp(currentSpeed, 0f, 5f * Time.deltaTime);
-                FaceTarget();
-
-                if (Time.time >= nextAttackTime)
-                {
-                    Attack();
-                    nextAttackTime = Time.time + 1f / attackRate;
-                }
+                transform.LookAt(transform.position + finalDirection);
+                transform.Translate(finalDirection * currentSpeed * Time.deltaTime, Space.World);
             }
         }
         else
@@ -163,6 +127,7 @@ public class Enemy : MonoBehaviour
                 else
                 {
                     finalDirection = -transform.forward * 0.5f;
+
                 }
             }
         }
@@ -172,7 +137,6 @@ public class Enemy : MonoBehaviour
             finalDirection += (finalDirection + avoidance).normalized;
         }
         return finalDirection;
-
     }
     bool CheckForObstacle(Vector3 direction, float distance)
     {
@@ -202,36 +166,11 @@ public class Enemy : MonoBehaviour
         }
         return avoidance.normalized;
     }
-   
-    void Attack()
-    {
-        if (target != null)
-        {
-            target.GetComponent<Health>().TakeDamage(attackDamage);
-            Debug.Log("Enemy attacked the player for " + attackDamage + " damage.");
-        }
-        else
-        {
-            Debug.LogWarning("Target is null, BRO FIX THIS");
-        }
-    }
-    void FaceTarget()
-    {
-        Vector3 direction = (target.position - transform.position).normalized;
-        direction.y = 0;
-        if (direction != Vector3.zero)
-        {
-            Quaternion lookRotation = Quaternion.LookRotation(direction);
-            transform.rotation = Quaternion.Slerp(transform.rotation, lookRotation, Time.deltaTime * 5f);
-        }
-    }
     void OnDrawGizmosSelected()
     {
         Gizmos.color = Color.red;
-        Gizmos.DrawWireSphere(transform.position, lookRadius);
-
-        Gizmos.color = Color.red;
         Vector3 rayStart = transform.position + Vector3.up * 0.5f;
+
         Gizmos.DrawRay(rayStart, transform.forward * obstacleCheckDistance);
 
         Gizmos.color = Color.yellow;
@@ -243,19 +182,9 @@ public class Enemy : MonoBehaviour
         Vector3 rightDiag = Quaternion.Euler(0, 45, 0) * transform.forward;
         Gizmos.DrawRay(rayStart, leftDiag * obstacleCheckDistance);
         Gizmos.DrawRay(rayStart, rightDiag * obstacleCheckDistance);
+        
     }
 
-    void TakeDamage(float amount)
-    {
-        health -= amount;
-        if (health <= 0f)
-        {
-            Die();
-        }
-    }
-    void Die()
-    {
-        this.gameObject.SetActive(false);
-        Debug.Log("Enemy Died");
-    }
 }
+
+    

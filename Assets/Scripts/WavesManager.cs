@@ -2,6 +2,9 @@ using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine.AI;
+using Unity.VisualScripting;
+using UnityEngine.Rendering;
+using UnityEngine.Scripting.APIUpdating;
 
 [System.Serializable]
 public class Wave
@@ -22,6 +25,15 @@ public class WavesManager : MonoBehaviour
     public float spawnRadius = 30f;
     public float minSpawnRadius = 20f;
 
+    [Header("Spawn settings")]
+    public LayerMask groundLayerMask = -1;
+    public float spawnHeight = 50f;
+    public int maxSpawnAttempts = 10;
+
+    [Header("Spawn Distribution")]
+    public int spawnSectors = 8;
+    public float sectorAngleVariation = 45f;
+
     [Header("Difficulty Scaling")]
     public int baseEnemyCount = 3;
     public float countMultiplier = 1.5f;
@@ -34,6 +46,7 @@ public class WavesManager : MonoBehaviour
     private float waveCountdown;
     private float searchCountdown = 1f;
     private SpawnState state = SpawnState.COUNTING;
+    private int currentSpawnIndex = 0;
 
     void Awake()
     {
@@ -144,6 +157,7 @@ public class WavesManager : MonoBehaviour
         waveNumber++;
         state = SpawnState.COUNTING;
         waveCountdown = timeBetweenWaves;
+        currentSpawnIndex = 0;
     }
     bool EnemyIsAlive()
     {
@@ -174,19 +188,54 @@ public class WavesManager : MonoBehaviour
 
     void SpawnEnemy(GameObject _enemy)
     {
-        Vector2 randomDirection2D = Random.insideUnitCircle.normalized * Random.Range(minSpawnRadius, spawnRadius);
-        Vector3 randomPoint = playerTransform.position + new Vector3(randomDirection2D.x, 0, randomDirection2D.y);
-
-        NavMeshHit hit;
-        if (NavMesh.SamplePosition(randomPoint, out hit, 10f, NavMesh.AllAreas))
+        Vector3 spawnPosition = Vector3.zero;
+        bool validPositionFound = false;
+        for (int attempt = 0; attempt < maxSpawnAttempts; attempt++)
         {
-            Vector3 spawnPosition = hit.position;
-            Instantiate(_enemy, spawnPosition, Quaternion.identity);
+            Vector3 spawnDirection = GetDistributedSpawnDirection();
+            float randomDistance = Random.Range(minSpawnRadius, spawnRadius);
+
+            Vector3 randomPoint = playerTransform.position + (spawnDirection * randomDistance);
+            randomPoint.y += spawnHeight;
+
+            RaycastHit hit;
+            if (Physics.Raycast(randomPoint, Vector3.down, out hit, spawnHeight + 10f, groundLayerMask))
+            {
+                spawnPosition = hit.point + Vector3.up * 0.5f;
+                validPositionFound = true;
+                break;
+            }
+        }
+        if (validPositionFound)
+        {
+            GameObject spawnEnemy = Instantiate(_enemy, spawnPosition, Quaternion.identity);
+            Debug.Log("Spawned enemy: " + _enemy.name + " at position: " + spawnPosition);
         }
         else
         {
-            Debug.LogWarning("Could not find a valid spawn position on the NavMesh for an enemy.");
+            Vector3 fallbackDirection = GetDistributedSpawnDirection();
+            Vector3 fallbackPosition = playerTransform.position + (fallbackDirection * Random.Range(5f, 10f));
+            fallbackPosition.y += 2f;
+
+            GameObject fallbackEnemy = Instantiate(_enemy, fallbackPosition, Quaternion.identity);
+            Debug.LogWarning("Failed to find valid spawn position after " + maxSpawnAttempts + " attempts. Using distributed fallback position.");
         }
+
+        currentSpawnIndex++;
+
+    }
+    Vector3 GetDistributedSpawnDirection()
+    {
+        float sectorAngle = 360f / spawnSectors;
+        float baseSectorAngle = (currentSpawnIndex % spawnSectors) * sectorAngle;
+
+        float randomVariation = Random.Range(-sectorAngleVariation, sectorAngleVariation);
+        float finalAngle = baseSectorAngle + randomVariation;
+
+        float angleInRadians = finalAngle * Mathf.Deg2Rad;
+        Vector3 direction = new Vector3(Mathf.Cos(angleInRadians), 0, Mathf.Sin(angleInRadians));
+
+        return direction.normalized;
 
     }
     /*IEnumerator SpawnEnemyCoroutine(GameObject _enemy)
@@ -327,5 +376,7 @@ public class WavesManager : MonoBehaviour
         waves.enemiesToSpawn = waveComposition;
         return wave;
     }*/
+    
+
 }
 

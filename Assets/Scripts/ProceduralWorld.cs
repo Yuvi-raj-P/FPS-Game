@@ -1,10 +1,6 @@
 using UnityEngine;
 using System.Collections.Generic;
-using UnityEngine.AI;
-using Unity.AI.Navigation;
-using System.Collections;
-
-
+using UnityEngine.Scripting.APIUpdating;
 public class ProceduralWorld : MonoBehaviour
 {
     public Transform player;
@@ -12,28 +8,13 @@ public class ProceduralWorld : MonoBehaviour
     public int renderDistance = 5;
     public int maxPropsPerChunk = 4;
     public float maxPropSize = 2f;
-
-    [Header("NavMeshSettings")]
-    public float navMeshUpdateDelay = 2f;
-    public bool useAsyncNavMeshUpdate = true;
-    public bool enableNavMeshUpdates = true;
-
-    private NavMeshSurface navMeshSurface;
     private Vector2Int currentPlayerChunk;
     private Dictionary<Vector2Int, GameObject> activeChunks = new Dictionary<Vector2Int, GameObject>();
-    private bool isUpdatingNavMesh = false;
-    private Coroutine navMeshUpdateCoroutine;
-    private HashSet<Vector2Int> pendingChunks = new HashSet<Vector2Int>();
+
+    public Quaternion Quarentation { get; private set; }
 
     void Start()
     {
-        navMeshSurface = GetComponent<NavMeshSurface>();
-        if (navMeshSurface == null)
-        {
-            Debug.LogError("NavMeshSurface component not forund");
-            this.enabled = false;
-            return;
-        }
         player = PlayerManager.Instance.player.transform;
         if (player == null)
         {
@@ -65,7 +46,6 @@ public class ProceduralWorld : MonoBehaviour
     {
         currentPlayerChunk = GetChunkCoordFromPosition(player.position);
         List<Vector2Int> chunksToRemove = new List<Vector2Int>(activeChunks.Keys);
-        bool hasNewChunks = false;
 
         for (int x = -renderDistance; x <= renderDistance; x++)
         {
@@ -80,8 +60,6 @@ public class ProceduralWorld : MonoBehaviour
                 else
                 {
                     GenerateChunk(chunkCoord);
-                    pendingChunks.Add(chunkCoord);
-                    hasNewChunks = true;
                 }
             }
         }
@@ -91,27 +69,44 @@ public class ProceduralWorld : MonoBehaviour
             {
                 Destroy(activeChunks[chunkCoord]);
                 activeChunks.Remove(chunkCoord);
-                pendingChunks.Remove(chunkCoord);
-                hasNewChunks = true;
             }
-        }
-        if (hasNewChunks && enableNavMeshUpdates)
-        {
-            if (navMeshUpdateCoroutine != null)
-            {
-                StopCoroutine(navMeshUpdateCoroutine);
-            }
-            navMeshUpdateCoroutine = StartCoroutine(DelayedNavMeshUpdate());
         }
     }
-    IEnumerator DelayedNavMeshUpdate()
+    void GenerateChunk(Vector2Int coord)
     {
-        yield return new WaitForSeconds(navMeshUpdateDelay);
-        if (!isUpdatingNavMesh)
+        GameObject chunkObject = new GameObject($"Chunk_{coord.x}_{coord.y}");
+        chunkObject.transform.parent = transform;
+        chunkObject.transform.position = new Vector3(coord.x * chunkSize, 0, coord.y * chunkSize);
+
+        GameObject ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
+        ground.name = "Ground";
+        ground.layer = LayerMask.NameToLayer("Ground");
+        ground.transform.parent = chunkObject.transform;
+        ground.transform.localPosition = Vector3.zero;
+        ground.transform.localScale = new Vector3(chunkSize / 10f, 1, chunkSize / 10f);
+
+        int numberOfProps = Random.Range(0, maxPropsPerChunk + 1);
+        for (int i = 0; i < numberOfProps; i++)
         {
-            yield return StartCoroutine(UpdateNavMeshCoroutine());
+            GameObject prop = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            prop.transform.parent = chunkObject.transform;
+
+            float randomScale = Random.Range(0.5f, maxPropSize);
+
+            prop.transform.localScale = Vector3.one * randomScale;
+
+            float randomX = Random.Range(-chunkSize / 2f, chunkSize / 2f);
+            float randomZ = Random.Range(-chunkSize / 2f, chunkSize / 2f);
+
+            prop.transform.localPosition = new Vector3(randomX, randomScale / 2f, randomZ);
+            prop.transform.rotation = Random.rotation;
+            prop.layer = LayerMask.NameToLayer("Obstacle");
         }
+        activeChunks.Add(coord, chunkObject);
+
     }
+
+    /* No more NavMesh baking for the game. The agents have been changed to a manual follow script.
     IEnumerator UpdateNavMeshCoroutine()
     {
         isUpdatingNavMesh = true;
@@ -155,6 +150,8 @@ public class ProceduralWorld : MonoBehaviour
                 agent.isStopped = true;
             }
         }
+
+
 
         yield return new WaitForSeconds(0.1f);
 
@@ -220,6 +217,7 @@ public class ProceduralWorld : MonoBehaviour
                 }
             }
         }
+        RestoreParkedEnemies();
 
         yield return new WaitForSeconds(0.1f);
 
@@ -234,7 +232,47 @@ public class ProceduralWorld : MonoBehaviour
         isUpdatingNavMesh = false;
         Debug.Log("NavMesh updated successfully.");
     }
-    
+    void ParkEnemiesOnChunk(GameObject chunk)
+    {
+        Bounds chunkBounds = new Bounds(chunk.transform.position, new Vector3(chunkSize, 100, chunkSize));
+        Enemy[] allEnemies = FindObjectsByType<Enemy>(FindObjectsSortMode.None);
+        foreach (var enemy in allEnemies)
+        {
+            if (enemy != null && chunkBounds.Contains(enemy.transform.position))
+            {
+                if (!parkedEnemies.Contains(enemy))
+                {
+                    enemy.Park();
+                    parkedEnemies.Add(enemy);
+                    Debug.Log($"Parking enemy {enemy.name} on chunk being removed.");
+                }
+            }
+        }
+    }
+    void RestoreParkedEnemies()
+    {
+        for (int i = parkedEnemies.Count - 1; i >= 0; i--)
+        {
+            Enemy enemy = parkedEnemies[i];
+            if (enemy != null)
+            {
+                if (enemy.Restore())
+                {
+                    Debug.Log("Successfully restored parked enemy");
+                    parkedEnemies.RemoveAt(i);
+                }
+                else
+                {
+                    Debug.LogWarning("Filed to restore parked enemy");
+                }
+            }
+            else
+            {
+                parkedEnemies.RemoveAt(i);
+            }
+        }
+    }
+
     IEnumerator ReenableAgentAfterDelay(NavMeshAgent agent, float delay)
     {
         yield return new WaitForSeconds(delay);
@@ -249,46 +287,17 @@ public class ProceduralWorld : MonoBehaviour
         }
 
     }
-    IEnumerator DelayedSetDestination(NavMeshAgent agent, Vector3 destination) {
+    IEnumerator DelayedSetDestination(NavMeshAgent agent, Vector3 destination)
+    {
         yield return new WaitForEndOfFrame();
         if (agent != null && agent.isActiveAndEnabled && agent.isOnNavMesh)
         {
             agent.SetDestination(destination);
         }
-    }
+    }*/
 
-    void GenerateChunk(Vector2Int coord)
-    {
-        GameObject chunkObject = new GameObject($"Chunk_{coord.x}_{coord.y}");
-        chunkObject.transform.parent = transform;
-        chunkObject.transform.position = new Vector3(coord.x * chunkSize, 0, coord.y * chunkSize);
 
-        GameObject ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
-        ground.name = "Ground";
-        ground.transform.parent = chunkObject.transform;
-        ground.transform.localPosition = Vector3.zero;
-        ground.transform.localScale = new Vector3(chunkSize / 10f, 1, chunkSize / 10f);
-
-        int numberOfProps = Random.Range(0, maxPropsPerChunk + 1);
-        for (int i = 0; i < numberOfProps; i++)
-        {
-            GameObject prop = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            prop.transform.parent = chunkObject.transform;
-
-            float randomScale = Random.Range(0.5f, maxPropSize);
-
-            prop.transform.localScale = Vector3.one * randomScale;
-
-            float randomX = Random.Range(-chunkSize / 2f, chunkSize / 2f);
-            float randomZ = Random.Range(-chunkSize / 2f, chunkSize / 2f);
-
-            prop.transform.localPosition = new Vector3(randomX, randomScale / 2f, randomZ);
-            prop.transform.rotation = Random.rotation;
-        }
-        activeChunks.Add(coord, chunkObject);
-
-    }
-    private class AgentState
+    /*private class AgentState
     {
         public Vector3 position;
         public Vector3 velocity;
@@ -296,5 +305,10 @@ public class ProceduralWorld : MonoBehaviour
         public bool hasPath;
         public bool isStopped;
 
-    }
+    }*/
 }
+
+     
+
+
+

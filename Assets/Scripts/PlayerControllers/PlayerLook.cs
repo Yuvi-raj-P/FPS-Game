@@ -6,6 +6,14 @@ public class PlayerLook : MonoBehaviour
     private float xRotation = 0f;
     public float xSensitivity = 30f;
     public float ySensitivity = 30f;
+
+    [Header("Zoom")]
+    public float defaultFov = 48.6f;
+    public float zoomedFov = 41f;
+    public float zoomSpeed = 10f;
+
+    private float currentTargetFov;
+
     void Awake()
     {
         #if UNITY_EDITOR
@@ -15,11 +23,27 @@ public class PlayerLook : MonoBehaviour
             xSensitivity = 50f;
             ySensitivity = 50f;
         #endif
+        currentTargetFov = defaultFov;
     }
 
     void Start()
     {
         Cursor.lockState = CursorLockMode.Locked;
+        if (cam != null)
+        {
+            cam.fieldOfView = defaultFov;
+        }
+    }
+    void Update()
+    {
+        if (cam != null)
+        {
+            cam.fieldOfView = Mathf.Lerp(cam.fieldOfView, currentTargetFov, Time.deltaTime * zoomSpeed);
+        }
+    }
+    public void SetZoom(bool isZooming)
+    {
+        currentTargetFov = isZooming ? zoomedFov : defaultFov;
     }
 
 
