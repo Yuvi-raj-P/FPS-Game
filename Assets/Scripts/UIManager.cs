@@ -32,6 +32,7 @@ public class UIManager : MonoBehaviour
 
     void Start()
     {
+
         if (playerHealth != null && healthSlider != null)
         {
             healthSlider.maxValue = playerHealth.maxHealth;

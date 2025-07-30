@@ -393,6 +393,11 @@ public partial class @PlayerInput: IInputActionCollection2, IDisposable
         return asset.FindBinding(bindingMask, out action);
     }
 
+    internal static bool GetAttackInput()
+    {
+        throw new NotImplementedException();
+    }
+
     // OnFoot
     private readonly InputActionMap m_OnFoot;
     private List<IOnFootActions> m_OnFootActionsCallbackInterfaces = new List<IOnFootActions>();

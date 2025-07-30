@@ -1,374 +1,313 @@
-using UnityEngine;
-using UnityEngine.UI;
-using System.Collections;
-using UnityEngine.AI;
+/*using UnityEngine;
 
+[RequireComponent(typeof(CharacterController))]
 public class DistoredMan : MonoBehaviour
 {
-    [Header("General Settings")]
-    public float lookRadius = 10f;
-    public Transform target;
-    public int attackDamage = 25;
-    public float attackRate = 0.3f;
-    private float nextAttackTime = 0f;
-    public float health = 100f;
+    public Transform player;
+    public float maxSpeed = 10f;
+    public float baseAcceleration = 2f;
+    public float stoppingDistance = 2f;
+    public float accelerationMultiplier = 1f;
+    public float gravity = -9.81f;
+    public LayerMask obstacleLayerMask = -1;
+    public float obstacleCheckDistance = 3f;
+    public float avoidanceForce = 5f;
+    public float sideRayDistance = 2f;
 
-    [Header("Vision Settings")]
+    private float currentSpeed;
+    private Vector3 moveDirection;
+    private Camera playerCamera;
+    private CharacterController controller;
 
-    public float viewAngle = 60f;
-    public float maxViewDistance = 15f;
-
-    [Header("Blackout Mechanic")]
-    public float minLookTimeBeforeBlackout = 2f;
-    public float maxLookTimeBeforeBlackout = 5f;
-    public float blackoutDuration = 1f;
-    public float blackoutSpeed = 2f;
-    public float normalSpeed = 3.5f;
-
-    private NavMeshAgent agent;
-    private bool isBeingWatched = false;
-    private float currentLookTime = 0f;
-    private float timeUntilNextBlackout = 0f;
-
-    //Flicker variables
-    /*public float flickerInterval = 3f;
-    public float flickerDuration = 0.5f;
-    public float flickerSpeed = 0.1f;
-    private bool isFlickering = false;
-    private bool canMoveDuringFlicker = false;
-    private bool hasHadFirstBlackout = false;
-    private Coroutine flickerCoroutine;*/
     void Start()
     {
-        target = PlayerManager.Instance.player.transform;
-        if (target == null)
-        {
-            target = GameObject.FindGameObjectWithTag("Player").GetComponent<Transform>();
-            Debug.LogWarning("Target not assigned, using Player as target. FIX THIS RIGHT NOW BRO");
-        }
-        agent = GetComponent<NavMeshAgent>();
-        agent.speed = normalSpeed;
-        timeUntilNextBlackout = Random.Range(minLookTimeBeforeBlackout, maxLookTimeBeforeBlackout);
+        player = PlayerManager.Instance.player.transform;
+        playerCamera = Camera.main;
+        currentSpeed = 0f;
+        verticalVelocity = 0f;
     }
     void Update()
     {
-
-        isBeingWatched = IsPlayerLookingAtMe();
-
-        if (isBeingWatched && !UIManager.IsBlackoutActive)
+        if (IsPlayerLooking())
         {
-            currentLookTime += Time.deltaTime;
-
-            if (currentLookTime >= timeUntilNextBlackout)
-            {
-                UIManager.Instance.TriggerBlackout(blackoutDuration);
-                currentLookTime = 0f;
-                timeUntilNextBlackout = Random.Range(minLookTimeBeforeBlackout, maxLookTimeBeforeBlackout);
-            }
-        }
-        else if (!isBeingWatched)
-        {
-            currentLookTime = 0f;
+            currentSpeed = Mathf.Lerp(currentSpeed, 0f, 10f * Time.deltaTime);
         }
         else
         {
-            //There is nothing in here; Intentionally left empty
-        }
-
-        if (!isBeingWatched || UIManager.IsBlackoutActive)
-        {
-            agent.speed = UIManager.IsBlackoutActive ? blackoutSpeed : normalSpeed;
-            float distance = Vector3.Distance(target.position, transform.position);
-            if (distance <= lookRadius)
-            {
-                agent.SetDestination(target.position);
-                FaceTarget();
-                if (distance <= agent.stoppingDistance)
-                {
-                    if (Time.time >= nextAttackTime)
-                    {
-                        Attack();
-                        nextAttackTime = Time.time + 1f / attackRate;
-                    }
-                }
-            }
-        }
-        else
-        {
-            agent.SetDestination(transform.position);
+            HandleGrounding();
+            HandleMovement();
         }
     }
-
-    // After testing, the flicker effect is not going to be used in the game
-    //Adds unnecssary confusing to the player and some error is causing damage without knowing
-    /*IEnumerator FlickerCycle()
+    bool IsPlayerLooking()
     {
-        while (true)
+        if (playerCamera == null)
         {
-            yield return new WaitForSeconds(flickerInterval);
+            return false;
+        }
+        Vector3 toEnemy = (transform.position - playerCamera.transform.position).normalized;
+        float angle = Vector3.Angle(playerCamera.transform.forward, toEnemy);
 
-            if (isBeingWatched && !isInBlackout && darknessImage != null)
+        if (angle < playerCamera.fieldOfView / 2f)
+        {
+            RaycastHit hit;
+            if (Physics.Raycast(playerCamera.transform.position, toEnemy, out hit, Mathf.Infinity))
             {
-                if (flickerCoroutine == null)
+                if (hit.collider.transform == transform)
                 {
-                    flickerCoroutine = StartCoroutine(FlickerEffect());
+                    return true;
                 }
-            }
-        }
-    }
-    IEnumerator FlickerEffect()
-    {
-        isFlickering = true;
-        float flickerTimer = 0f;
-
-        while (flickerTimer < flickerDuration)
-        {
-            float alpha = Mathf.PingPong(Time.time / flickerSpeed, 1f);
-
-            canMoveDuringFlicker = alpha > 0.7f;
-
-            Color color = darknessImage.color;
-            color.a = alpha * 0.8f;
-            darknessImage.color = color;
-
-            flickerTimer += Time.deltaTime;
-            yield return null;
-        }
-
-        Color finalColor = darknessImage.color;
-        finalColor.a = 0f;
-        darknessImage.color = finalColor;
-
-        isFlickering = false;
-        canMoveDuringFlicker = false;
-        flickerCoroutine = null;
-    }*/
-
-    bool IsPlayerLookingAtMe()
-    {
-        if (target == null) return false;
-
-        Camera playerCamera = target.GetComponentInChildren<Camera>();
-        if (playerCamera == null) return false;
-
-        Vector3 directionToEnemy = (transform.position - playerCamera.transform.position).normalized;
-        float angle = Vector3.Angle(playerCamera.transform.forward, directionToEnemy);
-        if (angle > viewAngle / 2f) return false;
-
-        float distance = Vector3.Distance(playerCamera.transform.position, transform.position);
-        if (distance > maxViewDistance) return false;
-
-        RaycastHit hit;
-        if (Physics.Raycast(playerCamera.transform.position, directionToEnemy, out hit, distance))
-        {
-            if (hit.collider.gameObject == gameObject)
-            {
-                return true;
             }
         }
         return false;
-
     }
-    void FaceTarget()
+    void HandleGrounding()
     {
-        Vector3 direction = (target.position - transform.position).normalized;
-        Quaternion lookRotation = Quaternion.LookRotation(new Vector3(direction.x, 0, direction.z));
-        transform.rotation = Quaternion.Slerp(transform.rotation, lookRotation, Time.deltaTime * 5f);
+        RaycastHit hit;
+        bool isGrounded = Physics.Raycast(transform.position, Vector3.down, out hit, groundCheckDistance, groundlayerMask);
+
+        if (isGrounded)
+        {
+            float targetY = hit.point.y + groundOffset;
+            transform.position = new Vector3(transform.position.x, targetY, transform.position.z);
+            verticalVelocity = 0f;
+        }
+        else
+        {
+            verticalVelocity += gravity * Time.deltaTime;
+            transform.Translate(0, verticalVelocity * Time.deltaTime, 0, Space.World);
+        }
+    }
+    void HandleMovement()
+    {
+        float distanceToPlayer = Vector3.Distance(transform.position, player.position);
+
+        if (distanceToPlayer > stoppingDistance)
+        {
+            Vector3 directionToPlayer = (player.position - transform.position).normalized;
+            directionToPlayer.y = 0;
+
+            Vector3 finalDirection = CalculateMovementDirection(directionToPlayer);
+
+            float distanceBasedAcceleration = baseAcceleration * (distanceToPlayer * accelerationMultiplier);
+            currentSpeed += distanceBasedAcceleration * Time.deltaTime;
+            currentSpeed = Mathf.Min(currentSpeed, maxSpeed);
+
+            if (finalDirection != Vector3.zero)
+            {
+                transform.LookAt(transform.position + finalDirection);
+                transform.Translate(finalDirection.normalized * currentSpeed * Time.deltaTime, Space.World);
+            }
+        }
+        else
+        {
+            currentSpeed = Mathf.Lerp(currentSpeed, 0f, 5f * Time.deltaTime);
+        }
+    }
+    Vector3 CalculateMovementDirection(Vector3 directionToPlayer)
+    {
+        Vector3 finalDirection = directionToPlayer;
+
+        if (CheckForObstacle(transform.forward, obstacleCheckDistance))
+        {
+            Vector3 leftDirection = Quaternion.Euler(0, -45, 0) * directionToPlayer;
+            Vector3 rightDirection = Quaternion.Euler(0, 45, 0) * directionToPlayer;
+
+            bool leftClear = !CheckForObstacle(leftDirection, obstacleCheckDistance);
+            bool rightClear = !CheckForObstacle(rightDirection, obstacleCheckDistance);
+
+            if (leftClear)
+            {
+                finalDirection = leftDirection;
+            }
+            else if (rightClear)
+            {
+                finalDirection = rightDirection;
+            }
+            else
+            {
+                finalDirection = -transform.forward; // Backup: move away from obstacle
+            }
+        }
+
+        Vector3 avoidance = CalculateSideAvoidance();
+        finalDirection = (finalDirection + avoidance).normalized;
+
+        return finalDirection;
+    }
+    bool CheckForObstacle(Vector3 direction, float distance)
+    {
+        Vector3 rayStart = transform.position + Vector3.up * 0.5f;
+        return Physics.Raycast(rayStart, direction, distance, obstacleLayerMask);
+    }
+
+    Vector3 CalculateSideAvoidance()
+    {
+        Vector3 avoidance = Vector3.zero;
+        Vector3 rayStart = transform.position + Vector3.up * 0.5f;
+
+        RaycastHit leftHit, rightHit;
+        bool leftObstacle = Physics.Raycast(rayStart, -transform.right, out leftHit, sideRayDistance, obstacleLayerMask);
+        bool rightObstacle = Physics.Raycast(rayStart, transform.right, out rightHit, sideRayDistance, obstacleLayerMask);
+
+        if (leftObstacle)
+        {
+            avoidance += transform.right * avoidanceForce;
+        }
+        if (rightObstacle)
+        {
+            avoidance -= transform.right * avoidanceForce;
+        }
+        return avoidance;
     }
     void OnDrawGizmosSelected()
     {
         Gizmos.color = Color.red;
-        Gizmos.DrawWireSphere(transform.position, lookRadius);
+        Vector3 rayStart = transform.position + Vector3.up * 0.5f;
+        Gizmos.DrawRay(rayStart, -transform.right * sideRayDistance);
 
         Gizmos.color = Color.yellow;
-        Gizmos.DrawWireSphere(transform.position, maxViewDistance);
-    }
-    void Attack()
-    {
-        if (target != null)
-        {
-            target.GetComponent<Health>().TakeDamage(attackDamage);
-
-        }
-        else
-        {
-            Debug.LogWarning("Target is null, FIX THIS ASAP");
-        }
+        Gizmos.DrawRay(rayStart, transform.right * sideRayDistance);
+        Gizmos.DrawRay(rayStart, transform.right * sideRayDistance);
 
     }
-    bool IsPlayerLookingAtMeAcc()
+
+   
+
+
+
+using System;
+using System.Numerics;
+using UnityEngine;
+using UnityEngine.Scripting.APIUpdating;
+
+void HandleAttack()
+{
+    MovedFromAttribute movedFrom = new MovedFromAttribute(true, "Assets/Scipts/Enemy");
+    if (PlayerInput.GetAttackInput())
     {
-        if (target == null) return false;
-
-        Camera playerCamera = target.GetComponentInChildren<Camera>();
-        if (playerCamera == null) return false;
-
-        Renderer enemyRenderer = GetComponent<Renderer>();
-        if (enemyRenderer == null) return false;
-        Bounds bounds = enemyRenderer.bounds;
-
-        Vector3[] samplePoints = {
-        bounds.center,
-        bounds.min,
-        bounds.max,
-        new Vector3(bounds.min.x, bounds.center.y, bounds.center.z),
-        new Vector3(bounds.max.x, bounds.center.y, bounds.center.z),
-        new Vector3(bounds.center.x, bounds.min.y, bounds.center.z),
-        new Vector3(bounds.center.x, bounds.max.y, bounds.center.z),
-        new Vector3(bounds.center.x, bounds.center.y, bounds.min.z),
-        new Vector3(bounds.center.x, bounds.center.y, bounds.max.z)
-    };
-
-        foreach (Vector3 point in samplePoints)
+        float distanceToPlayer = UnityEngine.Vector3.Distance(Transform.position, PlayerInput.Instance.player.position);
+        if (distanceToPlayer <= HandleAttack.attackRange && Time.time >= nextAttackTime)
         {
-            Vector3 screenPoint = playerCamera.WorldToScreenPoint(point);
-
-            if (screenPoint.x >= 0 && screenPoint.x <= Screen.width &&
-                screenPoint.y >= 0 && screenPoint.y <= Screen.height &&
-                screenPoint.z > 0)
+            AttackPlayer();
+            nextAttacktIME = time.time + lf/attack rate;
+            PlayerInput.Instance.playerHealth.TakeDamage(attackDamage);
+            Moreover, if(PlayerInput.Instance.PlayerHealth.currentHealth <= 0)
             {
-                Vector3 direction = (point - playerCamera.transform.position).normalized;
-                float distance = Vector3.Distance(playerCamera.transform.position, point);
-
-                if (distance <= maxViewDistance)
+                PlayerInput.Instance.playerHealth.Die();}
+                MovedFromAttribute movedFrom = new MovedFromAttribute(true, "Assets/Scripts");
+                Make sure to replace the "Assets/Scripts" with the correct path to your scipts.
+                Moreover, if(PlayerInput.Instance.PlayerHealth <= 0);
                 {
-                    RaycastHit hit;
-                    if (Physics.Raycast(playerCamera.transform.position, direction, out hit, distance))
-                    {
-                        if (hit.collider.gameObject == gameObject)
-                        {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
+                PlayerInput.Instance.playerHealth.Die():}}
 
-        return false;
-    }
-    bool IsPlayerLookingAtMostAccurateWhenIchangetheModels()
-    {
-        if (target == null) return false;
-        Camera playerCamera = target.GetComponentInChildren<Camera>();
-        Renderer enemyRenderer = GetComponent<Renderer>();
-        if (enemyRenderer == null) return false;
-
-        Bounds bounds = enemyRenderer.bounds;
-
-        Vector3[] samplePoints = {
-            bounds.center,
-            bounds.min,
-            bounds.max,
-            new Vector3(bounds.min.x, bounds.center.y, bounds.center.z),
-            new Vector3(bounds.max.x, bounds.center.y, bounds.center.z),
-            new Vector3(bounds.center.x, bounds.min.y, bounds.center.z),
-            new Vector3(bounds.center.x, bounds.max.y, bounds.center.z),
-            new Vector3(bounds.center.x, bounds.center.y, bounds.min.z),
-            new Vector3(bounds.center.x, bounds.center.y, bounds.max.z)
-        };
-        foreach (Vector3 point in samplePoints)
-        {
-            Vector3 screenPoint = playerCamera.WorldToScreenPoint(point);
-
-            if (screenPoint.x >= 0 && screenPoint.x <= Screen.width && screenPoint.y >= 0 && screenPoint.y <= Screen.height && screenPoint.z > 0)
-            {
-                Vector3 direction = (point - playerCamera.transform.position).normalized;
-                float distance = Vector3.Distance(playerCamera.transform.position, point);
-                if (distance <= maxViewDistance)
+                MoveBackward();
+                MoveForward();
+                MoveLeft():
+                MoveRight;
+                TakeDamage(float amount)
                 {
-                    RaycastHit hit;
-                    if (Physics.Raycast(playerCamera.transform.position, direction, out hit, distance))
-                    {
-                        if (hit.collider.gameObject == gameObject)
-                        {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-        return false;
-    }
-    /*bool IsPlayerLookingDifferentMethodForMoreAccuracy()
-    {
-        // This method needs to be tested before its use in the game as performance issues with WebGL but best and most accurate so far
-        if (target == null) return false;
-        Camera playerCamera = target.GetComponentInChildren<Camera>();
-        if (playerCamera == null) return false;
-
-        Bounds bounds = GetComponent<Renderer>().bounds;
-        if (!GeometryUtility.TestPlanesAABB(GeometryUtility.CalculateFrustumPlanes(playerCamera), bounds)) return false;
-
-        Vector3 enemyCenter = bounds.center;
-        Vector3 enemySize = bounds.size;
-
-        for (int x = 0; x < raycastResolution; x++)
-        {
-            for (int y = 0; y < raycastResolution; y++)
-            {
-                for (int z = 0; z < raycastResolution; z++)
+                health -= amount;}
+                Make sure to take the nesessaary precations
+                if (playerHealth != null) 
                 {
-                    Vector3 offset = new Vector3(
-                        (x / (float)(raycastResolution - 1) - 0.5f) * enemySize.x,
-                        (y / (float)(raycastResolution - 1) - 0.5f) * enemySize.y,
-                        (z / (float)(raycastResolution - 1) - 0.5f) * enemySize.z
-                    );
-                    Vector3 samplePoint = enemyCenter + offset;
-                    Vector3 direction = (samplePoint - playerCamera.transform.position).normalized;
-                    float distance = Vector3.Distance(playerCamera.transform.position, samplePoint);
-                    if (distance <= maxViewDistance)
+                 PlayerHealth.currentHealth -= attackDamage;}
+                 }
+                 MovedTowardsAttribute movedTowards = new MovedTowardsAttribute(true, "Assets/Scripts");
+                    Make sure to replace the "Assets/Scripts" with the correct path to your scripts.
+                    if(PlayerHealth != null)
                     {
-                        RaycastHit hit;
-                        if (Physics.Raycast(playerCamera.transform.position, direction, out hit, distance))
+                        PlayerHealth.cuurentHealth -= attackDmage;}
+                        if(playerHealth != null)
                         {
-                            RaycastHit hit;
-                        }
-                    }
-                }
+                            playerHealth.TakeDamage(attackDamage);}
+                            Debug.Log({gameObject.name} attacked player for ;)
+                            Debug.LogWarning("gameObejct.name: Cannot attack - playerHealth is null!");
+                            playerHealth = player.GetComponent<Health
+                            if(playerHealth == null)
+                            {
+                             Debug.LogWarning("take the caution");}
+                             Debug.LogWarning{"gameObject.name): cannot attack - playerHealth is null!");}
+                             playerHealth = player.GetComponent<Health>();
+                                if(playerHealth == null)
+                                {
+                                Debug.logWarning("ManualFollow on {gameObject.name); })}
+                                playerHealth = player.GetComponent<Health>();
+                                if(playerHealth == null)
+                                {
+                                    Debug.LogWarning($"{gameObject.name}: Cannot attack - playerHealth is null!");}
+                                    
+                                    playerHealth = player.GetComponent<Health>();}
+                                    
+                                    if(playerHealth == null)
+                                    {
+                                        Debug.LogWarning($"{gameObject.name)})}}
+                                        Debug.LogWarning: Cannot attack - playerHealth is null!";
+                                        playerHealth = player.GetComponent<Health>();
+                                        if(playerHealth == null)
+                                        {
+                                            Debug.LogWarning($"{gameObject.name}: cannot attack;)}
+                                            playerHealth = player.GetComponent<Health>();
+                                            if(playerHealth == null)
+                                            {
+                                               Debug.LogWarning("take the cation");}
+                                               MovedFromAttribute movedFrom = new MovedFromAttribute(true, "Assets/scipts");
+                                               Make sure to replace the "Assets/Scripts" with the correct path to your scripts.
+                                                  if(playerHealth != null)
+                                                  {
+                                                      playerHealth.TakeDamage(attackDamage);
+                                                      }
+                                                      else
+                                                      {
+                                                          Debug.LogWarning("take the caution");}
+                                                            playerHealth = player.GetComponent<Health>();
+                                                            }}
+                                                           using System.Collections;
+                                                          }}
+                                               }
 
-            }
+                                               Transform player; 
+                                               float maxSpeed = 10f;
+                                               float basecceleration = 2f;
+                                               float stoppingDistance = 2f;
+                                               if (playerCamera == null)
+                                               {
+                                                   playerCamera = Camera.main;}
+                                                    float accelerationMultiplier = 1f;
+                                                    float gravity = -9.81f;
+                                                    LayerMask objectLayerMask = -1;
+                                                    float obstacleCheckDistance = 3f;
+                                                    float avoidanceForce = 5f;
+                                                    Transform playerCamera;
+                                                    float sideRayDistance = 2f;
+                                                    float currentSpeed;
+                                                    Vector3 moveDirection;
+                                                    CharacterController controller;
+                                                    Health playerHealth;
+                                                    float verticleVelocity = 0f;
+                                                    If (player != null)
+                                                    {
+                                                        playerHealth = player.GetComponent<Health>();}
+                                                        }else{
+                                                        Debug.LogError("FIX THIS ERROR:);}
+                                                        MoveBackward();
+                                                        MoveForward();
+                                                        MoveLeft();
+                                                        TakeDamage(float amount)
+                                                        {
+                                                          health -= amount;}}
+                                                          
+
+
+
+
+
+
+
+
+
+
         }
-    }*/
-    /*IEnumerator FlickerCycle()
-    {
-        while (true)
-        {
-            yield return new WaitForSeconds(flickerInterval);
-            if (isBeingWatched && darknessImage != null)
-            {
-                flickerCoroutine = StartCoroutine(FlickerEffect());
-
-            }
-        }
-    }*/
-    /*IEnumerator FlickerEffect()
-    {
-        isFlickering = true;
-        float flickerTimer = 0f;
-
-        while (flickerTimer < flickerDuration)
-        {
-            float alpha = Mathf.PingPong(Time.time / flickerSpeed, 1f);
-            canMoveDuringFlicker = alpha > 0.7f;
-
-            Color color = darknessImage.color;
-            color.a = alpha * 0.8f;
-            darknessImage.color = color;
-
-            flickerTimer += Time.deltaTime;
-            yield return null;
-        }
-
-        Color finalColor = darknessImage.color;
-        finalColor.a = 0f;
-        darknessImage.color = finalColor;
-
-        isFlickering = false;
-        canMoveDuringFlicker = false;
-
-    }*/
-    void VariableSpeed()
-    {
-        
     }
 }
+}
+*/

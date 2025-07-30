@@ -2,6 +2,7 @@ using UnityEngine;
 
 public class Damage : MonoBehaviour
 {
+    [Header("Damage")]
     public float health = 100f;
 
     // Update is called once per frame
@@ -14,7 +15,6 @@ public class Damage : MonoBehaviour
     }
     void Die()
     {
-        Debug.Log("Enemy Died");
         Destroy(this.gameObject);
 
     }
