@@ -20,6 +20,12 @@ public class FreezeEnemies : MonoBehaviour
     public float attackRate = 0.5f;
     public float attackRange = 2.5f;
     private float nextAttackTime = 0f;
+
+    [Header("Flocking Settings")]
+    public LayerMask enemyLayerMask;
+    public float enemySeparationRadius = 3f;
+    public float enemySeparationForce = 5f;
+
     
 
     [Header("Blackout Mechanic")]
@@ -47,6 +53,9 @@ public class FreezeEnemies : MonoBehaviour
         currentSpeed = 0f;
         timeUntilNextBlackout = Random.Range(minLookTimeBeforeBlackout, maxLookTimeBeforeBlackout);
 
+        maxSpeed *= Random.Range(0.9f, 1.1f);
+        stoppingDistance *= Random.Range(0.9f, 1.2f);
+        
         if (player != null)
         {
             playerHealth = player.GetComponent<Health>();
@@ -98,9 +107,12 @@ public class FreezeEnemies : MonoBehaviour
 
     void Update()
     {
+        if (player == null) return;
+
         if (playerCamera == null)
         {
             FindPlayerCamera();
+            if (playerCamera == null) return;
         }
         isBeingWatched = IsPlayerLooking();
 
@@ -114,35 +126,30 @@ public class FreezeEnemies : MonoBehaviour
                 timeUntilNextBlackout = Random.Range(minLookTimeBeforeBlackout, maxLookTimeBeforeBlackout);
             }
         }
-        else if (!isBeingWatched){
+        else if (!isBeingWatched)
+        {
             currentLookTime = 0f;
         }
+        HandleMovement();
+        HandleAttack();
+    }
+    void HandleMovement()
+    {
         Vector3 horizontalMove = Vector3.zero;
         float distanceToPlayer = Vector3.Distance(transform.position, player.position);
 
         if (isBeingWatched && !UIManager.IsBlackoutActive)
         {
             currentSpeed = 0;
-            maxSpeed = 0;
-            if (distanceToPlayer <= attackRange && Time.time >= nextAttackTime)
-            {
-                AttackPlayer();
-                nextAttackTime = Time.time + 1f / attackRate;
-            }
-
         }
         else
         {
             maxSpeed = UIManager.IsBlackoutActive ? blackoutSpeed : normalSpeed;
-            accelerationMultiplier = 10f;
+            accelerationMultiplier = 30f;
             baseAcceleration = 10f;
             horizontalMove = HandleHorizontalMovement();
-            if (distanceToPlayer <= attackRange && Time.time >= nextAttackTime)
-            {
-                AttackPlayer();
-                nextAttackTime = Time.time + 1f / attackRate;
-            }
         }
+
         if (controller.isGrounded)
         {
             moveDirection.y = -1f;
@@ -154,6 +161,17 @@ public class FreezeEnemies : MonoBehaviour
         Vector3 finalMove = horizontalMove * currentSpeed + moveDirection.y * Vector3.up;
         controller.Move(finalMove * Time.deltaTime);
     }
+    void HandleAttack()
+    {
+        if (Time.time < nextAttackTime) return;
+
+        float distanceToPlayer = Vector3.Distance(transform.position, player.position);
+        if (distanceToPlayer <= stoppingDistance)
+        {
+            AttackPlayer();
+            nextAttackTime = Time.time + 1f / attackRate;
+        }
+    }
     void AttackPlayer() {
         if (playerHealth != null)
         {
@@ -164,6 +182,64 @@ public class FreezeEnemies : MonoBehaviour
         {
             Debug.LogWarning($"{gameObject.name}: Cannot attack - playerHealth is null!");
         }
+    }
+    Vector3 CalculateMovementDirection(Vector3 directionToPlayer)
+    {
+        Vector3 finalDirection = directionToPlayer;
+
+        if (CheckForObstacle(transform.forward, obstacleCheckDistance))
+        {
+            Vector3 leftDirection = Quaternion.Euler(0, -45, 0) * directionToPlayer;
+            Vector3 rightDirection = Quaternion.Euler(0, 45, 0) * directionToPlayer;
+
+            bool leftClear = !CheckForObstacle(leftDirection, obstacleCheckDistance);
+            bool rightClear = !CheckForObstacle(rightDirection, obstacleCheckDistance);
+
+            if (leftClear)
+            {
+                finalDirection = leftDirection;
+            }
+            else if (rightClear)
+            {
+                finalDirection = rightDirection;
+            }
+            else
+            {
+                finalDirection = -transform.forward; 
+            }
+        }
+
+        Vector3 avoidance = CalculateSideAvoidance();
+        Vector3 separation = CalculateSeparationVector();
+
+        finalDirection = (finalDirection + avoidance).normalized;
+        if (separation != Vector3.zero)
+        {
+            finalDirection = (finalDirection + separation * enemySeparationForce).normalized;
+        }
+
+        return finalDirection;
+    }
+
+    Vector3 CalculateSeparationVector()
+    {
+        Vector3 separationVector = Vector3.zero;
+        Collider[] nearbyEnemies = Physics.OverlapSphere(transform.position, enemySeparationRadius, enemyLayerMask);
+
+        if (nearbyEnemies.Length > 1)
+        {
+            foreach (var enemyCollider in nearbyEnemies)
+            {
+                if (enemyCollider.gameObject == gameObject) continue;
+                Vector3 directionFromOther = transform.position - enemyCollider.transform.position;
+                float distance = directionFromOther.magnitude;
+                if (distance > 0)
+                {
+                    separationVector += directionFromOther.normalized / distance;
+                }
+            }
+        }
+        return separationVector.normalized;
     }
 
     bool IsPlayerLooking()
@@ -223,37 +299,7 @@ public class FreezeEnemies : MonoBehaviour
         return finalDirection;
     }
 
-    Vector3 CalculateMovementDirection(Vector3 directionToPlayer)
-    {
-        Vector3 finalDirection = directionToPlayer;
-
-        if (CheckForObstacle(transform.forward, obstacleCheckDistance))
-        {
-            Vector3 leftDirection = Quaternion.Euler(0, -45, 0) * directionToPlayer;
-            Vector3 rightDirection = Quaternion.Euler(0, 45, 0) * directionToPlayer;
-
-            bool leftClear = !CheckForObstacle(leftDirection, obstacleCheckDistance);
-            bool rightClear = !CheckForObstacle(rightDirection, obstacleCheckDistance);
-
-            if (leftClear)
-            {
-                finalDirection = leftDirection;
-            }
-            else if (rightClear)
-            {
-                finalDirection = rightDirection;
-            }
-            else
-            {
-                finalDirection = -transform.forward; 
-            }
-        }
-
-        Vector3 avoidance = CalculateSideAvoidance();
-        finalDirection = (finalDirection + avoidance).normalized;
-
-        return finalDirection;
-    }
+    
 
     bool CheckForObstacle(Vector3 direction, float distance)
     {

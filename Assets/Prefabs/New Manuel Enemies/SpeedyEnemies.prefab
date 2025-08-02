@@ -11,11 +11,12 @@ GameObject:
   - component: {fileID: 923813498223988992}
   - component: {fileID: 2151641979948140423}
   - component: {fileID: 483537155929345468}
+  - component: {fileID: 4767187123409934355}
   - component: {fileID: 8413871975590543922}
   - component: {fileID: 3675750976371185850}
   - component: {fileID: 7595847604495757803}
   m_Layer: 10
-  m_Name: EnemyManual
+  m_Name: SpeedyEnemies
   m_TagString: Enemy
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -69,7 +70,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 21b608cc1d42642afbc3cc740d2800d3, type: 2}
+  - {fileID: 2100000, guid: c752a9f36db474a8c9505f298a10788a, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -91,6 +92,29 @@ MeshRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_AdditionalVertexStreams: {fileID: 0}
+--- !u!136 &4767187123409934355
+CapsuleCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 152820800051172738}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 2
+  m_Radius: 0.5
+  m_Height: 2
+  m_Direction: 1
+  m_Center: {x: 0, y: 0, z: 0}
 --- !u!114 &8413871975590543922
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -104,10 +128,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   player: {fileID: 0}
-  maxSpeed: 7
-  baseAcceleration: 0.9
+  maxSpeed: 9
+  baseAcceleration: 1.2
   stoppingDistance: 5
-  accelerationMultiplier: 0.9
+  accelerationMultiplier: 1.1
   gravity: -9.81
   obstacleLayerMask:
     serializedVersion: 2

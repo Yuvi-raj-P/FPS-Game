@@ -13,6 +13,13 @@ public class ManualFollow : MonoBehaviour
     public float avoidanceForce = 5f;
     public float sideRayDistance = 2f;
 
+    [Header("Flocking Settings")]
+    public LayerMask enemyLayerMask;
+    public float enemySeparationRadius = 3f;
+    public float enemySeparationForce = 5f;
+    private Vector3 targetPositionOffset;
+    public float targetOffsetUpdateTime = 2f;
+
     private float currentSpeed;
     private Vector3 moveDirection; 
     private CharacterController controller;
@@ -34,6 +41,9 @@ public class ManualFollow : MonoBehaviour
         controller = GetComponent<CharacterController>();
         currentSpeed = 0f;
 
+        maxSpeed *= Random.Range(0.9f, 1.1f);
+        stoppingDistance *= Random.Range(0.9f, 1.2f);
+
         if (player != null)
         {
             playerHealth = player.GetComponent<Health>();
@@ -42,6 +52,12 @@ public class ManualFollow : MonoBehaviour
                 Debug.LogWarning($"ManualFollow on {gameObject.name}: Could not find Health component on player!");
             }
         }
+        InvokeRepeating(nameof(UpdateTargetOffset), 0, targetOffsetUpdateTime);
+    }
+    void UpdateTargetOffset()
+    {
+        targetPositionOffset = Random.insideUnitSphere * (stoppingDistance * 0.5f);
+        targetPositionOffset.y = 0;
     }
 
     void Update()
@@ -158,11 +174,40 @@ public class ManualFollow : MonoBehaviour
             }
         }
         Vector3 avoidance = CalculateAvoidanceVector();
+        Vector3 separation = CalculateSeparationVector();
+
         if (avoidance != Vector3.zero)
         {
             finalDirection = (finalDirection + avoidance).normalized;
         }
+        if (separation != Vector3.zero)
+        {
+            finalDirection = (finalDirection + separation * enemySeparationForce).normalized;
+        }
         return finalDirection.normalized; 
+    }
+    Vector3 CalculateSeparationVector()
+    {
+        Vector3 separationVector = Vector3.zero;
+        Collider[] nearbyEnemies = Physics.OverlapSphere(transform.position, enemySeparationRadius, enemyLayerMask);
+
+        if (nearbyEnemies.Length > 1)
+        {
+            foreach (var enemyCollider in nearbyEnemies)
+            {
+                if (enemyCollider.gameObject == gameObject) continue;
+
+                Vector3 directionFromOther = transform.position - enemyCollider.transform.position;
+                float distance = directionFromOther.magnitude;
+                if (distance > 0)
+                {
+                    separationVector += directionFromOther.normalized / distance;
+                }
+            }
+            separationVector /= (nearbyEnemies.Length - 1);
+        }
+        return separationVector.normalized;
+        //Continue HERE
     }
     bool CheckForObstacle(Vector3 direction, float distance)
     {
@@ -206,6 +251,9 @@ public class ManualFollow : MonoBehaviour
         Vector3 sideRayStart = transform.position + controller.center;
         Gizmos.DrawRay(sideRayStart, -transform.right * sideRayDistance);
         Gizmos.DrawRay(sideRayStart, transform.right * sideRayDistance);
+
+        Gizmos.color = Color.cyan;
+        Gizmos.DrawWireSphere(transform.position, enemySeparationRadius);
 
         Gizmos.color = Color.blue;
         Vector3 leftDiag = Quaternion.Euler(0, -45, 0) * transform.forward;

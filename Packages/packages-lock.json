@@ -1,11 +1,11 @@
 {
   "dependencies": {
-    "com.hestia.hackatime": {
-      "version": "https://github.com/unsaltedkale/unity-hackatime.git?path=/Assets/com.hestia.hackatime",
+    "com.daniel-geo.unityhackatime": {
+      "version": "https://github.com/daniel-geo/unity-hackatime.git#package",
       "depth": 0,
       "source": "git",
       "dependencies": {},
-      "hash": "dbf2978b89f2453586af65b892198e3c9f6615d4"
+      "hash": "d9a1a3cc5c997fe7a9ea171a9a3970d24793dba4"
     },
     "com.unity.ai.navigation": {
       "version": "2.0.8",

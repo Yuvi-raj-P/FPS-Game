@@ -1,110 +1,282 @@
+using UnityEditor;
 using UnityEngine;
-using UnityEngine.AI;
 
+[RequireComponent(typeof(CharacterController))]
 public class FlyingEnemies : MonoBehaviour
 {
-    public float lookRadius = 10f;
-    public Transform target;
-    public int attackDamage = 10;
-    public float attackRate = 0.5f;
+    [Header("Movement Settings")]
+    public Transform player;
+    public float maxSpeed = 8f;
+    public float baseAcceleration = 2f;
+    public float stoppingDistance = 5f;
+    public float accelerationMultiplier = 1f;
+    public float flightHeight = 10f;
+
+    [Header("Flying Animation Settings")]
+    public float bobbingAmplitude = 0.5f;
+    public float bobbingFrequency = 2f;
+    public float bankingAngle = 20f;
+    public float bankingSpeed = 3f;
+    public float heightAdjustmentSpeed = 2f;
+    public float naturalDrift = 0.3f;
+
+    [Header("Avoidance Settings")]
+    public LayerMask obstacleLayerMask = -1;
+    public float obstacleCheckDistance = 4f;
+    public float sideRayDistance = 3f;
+
+    [Header("Flocking Settings")]
+    public LayerMask enemyLayerMask;
+    public float enemySeparationRadius = 4f;
+    public float enemySeparationForce = 5f;
+    public float targetOffsetUpdateTime = 2f;
+    private Vector3 targetPositionOffset;
+
+    [Header("Attack Settings")]
+    public GameObject projectilePrefab;
+    public Transform projectileSpawnPoint;
+    public int attackDamage = 20;
+    public float attackRate = 1f;
+    public float attackRange = 15f;
+    public float projectileSpeed = 20f;
+    public float projectileLifetime = 5f;
     private float nextAttackTime = 0f;
 
-    [Header("Flying Settings")]
-    public float flySpeed = 5f;
-    public float hoverHeight = 3f;
-    public float floatAmplitude = 0.5f;
-    public float floatFrequency = 1f;
+    private float currentSpeed;
+    private CharacterController controller;
+    private Health playerHealth;
 
-    private Vector3 startPosition;
-    private NavMeshAgent agent;
-    private Vector3 baseDestination;
+    private float bobbingTimer;
+    private float baseFlightHeight;
+    private Vector3 currentVelocity;
+    private Vector3 lastMoveDirection;
+    private float bankingRotation;
 
-
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
-        target = PlayerManager.Instance.player.transform;
-        if (target == null)
-        {
-            target = GameObject.FindGameObjectWithTag("Player").GetComponent<Transform>();
-            Debug.LogWarning("Target not assigned, using Player as target. FIX THIS ASAP");
-        }
-        agent = GetComponent<NavMeshAgent>();
-        agent.speed = flySpeed;
-        agent.angularSpeed = 120f;
-        agent.acceleration = 8f;
-        agent.updateRotation = false;
-        agent.updatePosition = false;
+        player = PlayerManager.Instance.player.transform;
+        controller = GetComponent<CharacterController>();
+        currentSpeed = 0f;
+        baseFlightHeight = flightHeight;
 
-        startPosition = transform.position;
+        maxSpeed *= Random.Range(0.9f, 1.1f);
+        stoppingDistance *= Random.Range(0.9f, 1.2f);
+
+        bobbingTimer = Random.Range(0f, Mathf.PI * 2f);
+        bobbingFrequency *= Random.Range(0.8f, 1.2f);
+        bobbingAmplitude *= Random.Range(0.7f, 1.3f);
+
+        if (player != null)
+        {
+            playerHealth = player.GetComponent<Health>();
+            if (playerHealth == null)
+            {
+                Debug.LogError("Player does not have a Health component.");
+            }
+        }
+
+        InvokeRepeating(nameof(UpdateTargetOffset), 0, targetOffsetUpdateTime);
     }
 
-    // Update is called once per frame
+    void UpdateTargetOffset()
+    {
+        targetPositionOffset = Random.insideUnitSphere * (stoppingDistance * 0.5f);
+        targetPositionOffset.y = 0;
+    }
     void Update()
     {
-        Vector3 desiredPosition;
-        float distance = Vector3.Distance(target.position, transform.position);
-        if (distance <= lookRadius)
-        {
-            agent.SetDestination(target.position);
-            FaceTarget();
+        HandleMovement();
+        HandleFlyingAnimation();
+        HandleAttack();
+    }
+    void HandleMovement()
+    {
+        Vector3 targetPosition = player.position + targetPositionOffset;
+        bobbingTimer += Time.deltaTime * bobbingFrequency;
+        float bobbingOffset = Mathf.Sin(bobbingTimer) * bobbingAmplitude;
+        targetPosition.y = player.position.y + baseFlightHeight + bobbingOffset;
 
-            if (distance <= 3f)
-            {
-                if (Time.time >= nextAttackTime)
-                {
-                    Attack();
-                    nextAttackTime = Time.time + 1f / attackRate;
-                }
-            }
+        float distanceToTarget = Vector3.Distance(transform.position, targetPosition);
+        Vector3 finalMoveDirection;
+
+        if (distanceToTarget > stoppingDistance)
+        {
+            Vector3 directionToTarget = (targetPosition - transform.position).normalized;
+            finalMoveDirection = CalculateMovementDirection(directionToTarget);
+
+            Vector3 driftDirection = new Vector3(Mathf.Sin(Time.time * 0.7f) * naturalDrift, 0, Mathf.Cos(Time.time * 0.5f) * naturalDrift);
+            finalMoveDirection = (finalMoveDirection + driftDirection).normalized;
+
+            float distanceBasedAcceleration = baseAcceleration * (distanceToTarget * accelerationMultiplier);
+            currentSpeed += distanceBasedAcceleration * Time.deltaTime;
+            currentSpeed = Mathf.Min(currentSpeed, maxSpeed);
         }
         else
         {
-            agent.SetDestination(startPosition);
+            finalMoveDirection = Vector3.zero;
+            currentSpeed = Mathf.Lerp(currentSpeed, 0, 5f * Time.deltaTime);
         }
-        Vector3 agentPathPoint = agent.nextPosition;
-        float desiredHeight = hoverHeight + Mathf.Sin(Time.time * floatFrequency) * floatAmplitude;
 
-        float targetHeight = (distance <= agent.stoppingDistance) ? target.position.y + hoverHeight : agentPathPoint.y + desiredHeight;
-        desiredPosition = new Vector3(agentPathPoint.x, targetHeight, agentPathPoint.z);
+        currentVelocity = Vector3.Lerp(currentVelocity, finalMoveDirection * currentSpeed, Time.deltaTime * 5f);
+        controller.Move(currentVelocity * Time.deltaTime);
 
-        transform.position = Vector3.Lerp(transform.position, desiredPosition, Time.deltaTime * flySpeed);
+        lastMoveDirection = finalMoveDirection;
     }
-    void Attack()
-    {
-        if (target != null)
-        {
-            Health targetHealth = target.GetComponent<Health>();
-            if (targetHealth != null)
-            {
-                targetHealth.TakeDamage(attackDamage);
-                Debug.Log("Flying enemy attacked the player for " + attackDamage + "damage.");
 
+    void HandleFlyingAnimation()
+    {
+        float horizontalMovement = Vector3.Dot(lastMoveDirection, transform.right);
+        float targetBanking = -horizontalMovement * bankingAngle;
+        bankingRotation = Mathf.Lerp(bankingRotation, targetBanking, Time.deltaTime * bankingSpeed);
+
+        if (lastMoveDirection != Vector3.zero)
+        {
+            Quaternion targetRotation = Quaternion.LookRotation(lastMoveDirection);
+            Quaternion bankingRotationQ = Quaternion.Euler(0, 0, bankingRotation);
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation * bankingRotationQ, Time.deltaTime * 3f);
+
+        }
+    }
+    void HandleAttack()
+    {
+        if (player == null) return;
+
+        float distanceToPlayer = Vector3.Distance(transform.position, player.position);
+
+        if (distanceToPlayer <= attackRange && Time.time >= nextAttackTime)
+        {
+            if (HasLineOfSight())
+            {
+                ShootProjectile();
+                nextAttackTime = Time.time + 1f / attackRate;
+            }
+        }
+    }
+
+    bool HasLineOfSight()
+    {
+        Vector3 directionToPlayer = (player.position - projectileSpawnPoint.position).normalized;
+        float distanceToPlayer = Vector3.Distance(projectileSpawnPoint.position, player.position);
+
+        return !Physics.Raycast(projectileSpawnPoint.position, directionToPlayer, distanceToPlayer, obstacleLayerMask);
+    }
+    void ShootProjectile()
+    {
+        if (projectilePrefab == null)
+        {
+            Debug.LogWarning($"FlyingEnemies on {gameObject.name}: No projectile prefab assigned!");
+            return;
+        }
+        Vector3 targetPosition = PredictPlayerPosition();
+        Vector3 shootDirection = (targetPosition - projectileSpawnPoint.position).normalized;
+
+        GameObject projectile = Instantiate(projectilePrefab, projectileSpawnPoint.position, Quaternion.LookRotation(shootDirection));
+
+        Rigidbody projectileRb = projectile.GetComponent<Rigidbody>();
+        if (projectileRb != null)
+        {
+            projectileRb.linearVelocity = shootDirection * projectileSpeed;
+        }
+
+        EnemyProjectile projectileScript = projectile.GetComponent<EnemyProjectile>();
+        if (projectileScript == null)
+        {
+            projectileScript = projectile.AddComponent<EnemyProjectile>();
+        }
+
+        projectileScript.Initialize(attackDamage, projectileLifetime);
+
+        Debug.Log($"{gameObject.name} shot projectile at player!");
+    }
+    Vector3 PredictPlayerPosition()
+    {
+        Rigidbody playerRb = player.GetComponent<Rigidbody>();
+        CharacterController playerController = player.GetComponent<CharacterController>();
+
+        Vector3 playerVelocity = Vector3.zero;
+
+        if (playerRb != null)
+        {
+            playerVelocity = playerRb.linearVelocity;
+        }
+        else if (playerController != null)
+        {
+            playerVelocity = playerController.velocity;
+        }
+
+        float timeToTarget = Vector3.Distance(projectileSpawnPoint.position, player.position) / projectileSpeed;
+        return player.position + playerVelocity * timeToTarget;
+    }
+    Vector3 CalculateMovementDirection(Vector3 directionToTarget)
+    {
+        Vector3 finalDirection = directionToTarget;
+
+        if (CheckForObstacle(transform.forward, obstacleCheckDistance))
+        {
+            Vector3 leftDirection = Quaternion.Euler(0, -45, 0) * transform.forward;
+            Vector3 rightDirection = Quaternion.Euler(0, 45, 0) * transform.forward;
+
+            if (!CheckForObstacle(leftDirection, obstacleCheckDistance))
+            {
+                finalDirection = leftDirection;
+            }
+            else if (!CheckForObstacle(rightDirection, obstacleCheckDistance))
+            {
+                finalDirection = rightDirection;
             }
             else
             {
-                Debug.LogWarning("Target does not have a Health component, BRO FIX THIS RIGHT NOW");
+                finalDirection = Quaternion.Euler(0, -90, 0) * transform.forward;
             }
         }
+
+        Vector3 separation = CalculateSeparationVector();
+        if (separation != Vector3.zero)
+        {
+            finalDirection = (finalDirection + separation * enemySeparationForce).normalized;
+        }
+
+        return finalDirection.normalized;
     }
-    void FaceTarget()
+    Vector3 CalculateSeparationVector()
     {
-        Vector3 direction = (target.position - transform.position).normalized;
-        Quaternion lookRotation = Quaternion.LookRotation(direction);
-        transform.rotation = Quaternion.Slerp(transform.rotation, lookRotation, Time.deltaTime * 5f);
+        Vector3 separationVector = Vector3.zero;
+        Collider[] nearbyEnemies = Physics.OverlapSphere(transform.position, enemySeparationRadius, enemyLayerMask);
+
+        if (nearbyEnemies.Length > 1)
+        {
+            foreach (var enemyCollider in nearbyEnemies)
+            {
+                if (enemyCollider.gameObject == gameObject) continue;
+
+                Vector3 directionFromOther = transform.position - enemyCollider.transform.position;
+                float distance = directionFromOther.magnitude;
+                if (distance > 0)
+                {
+                    separationVector += directionFromOther.normalized / distance;
+                }
+            }
+            separationVector /= (nearbyEnemies.Length - 1);
+        }
+        return separationVector.normalized;
+    }
+
+    bool CheckForObstacle(Vector3 direction, float distance)
+    {
+        return Physics.Raycast(transform.position, direction, distance, obstacleLayerMask);
     }
     void OnDrawGizmosSelected()
     {
         Gizmos.color = Color.red;
-        Gizmos.DrawWireSphere(transform.position, lookRadius);
+        Gizmos.DrawRay(transform.position, transform.forward * obstacleCheckDistance);
 
-        Gizmos.color = Color.yellow;
-        Gizmos.DrawWireSphere(transform.position, 3f);
+        Gizmos.color = Color.cyan;
+        Gizmos.DrawWireSphere(transform.position, enemySeparationRadius);
 
-        if (target != null)
-        {
-            Gizmos.color = Color.blue;
-            Gizmos.DrawWireCube(target.position + Vector3.up * hoverHeight, Vector3.one * 0.5f);
-        }
+        Gizmos.color = Color.blue;
+        Vector3 leftDiag = Quaternion.Euler(0, -45, 0) * transform.forward;
+        Vector3 rightDiag = Quaternion.Euler(0, 45, 0) * transform.forward;
+        Gizmos.DrawRay(transform.position, leftDiag * obstacleCheckDistance);
+        Gizmos.DrawRay(transform.position, rightDiag * obstacleCheckDistance);
     }
 }

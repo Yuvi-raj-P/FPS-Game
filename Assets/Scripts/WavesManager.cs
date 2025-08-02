@@ -1,10 +1,9 @@
 using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
-using UnityEngine.AI;
-using Unity.VisualScripting;
-using UnityEngine.Rendering;
 using UnityEngine.Scripting.APIUpdating;
+using UnityEngine.UI;
+using UnityEditor;
 
 [System.Serializable]
 public class Wave
@@ -13,10 +12,12 @@ public class Wave
     public List<GameObject> enemiesToSpawn;
     public float spawnRate;
 }
+
 public class WavesManager : MonoBehaviour
 {
     public enum SpawnState { COUNTING, SPAWNING, WAITING };
     public static WavesManager Instance;
+
     [Header("Enemy Prefabs")]
     public List<GameObject> enemyPrefabs = new List<GameObject>();
 
@@ -32,14 +33,24 @@ public class WavesManager : MonoBehaviour
 
     [Header("Spawn Distribution")]
     public int spawnSectors = 8;
-    public float sectorAngleVariation = 45f;
+    public float sectorAngleVariation = 20f;
 
     [Header("Difficulty Scaling")]
-    public int baseEnemyCount = 3;
-    public float countMultiplier = 1.5f;
-    public float baseSpawnRate = 1f;
-    public float rateMultiplier = 0.1f;
+    public int baseEnemyCount = 2;
+    public float countMultiplier = 0.8f;
+    public float baseSpawnRate = 0.5f;
+    public float rateMultiplier = 0.05f;
     public int wavesPerNewEnemy = 3;
+
+    [Header("Special Enemy Settings")]
+    public int specialEnemyStartWave = 4;
+    public int specialEnemyFrequency = 2;
+    [Tooltip("Enemy types that are 'special' - only one can exist at a time")]
+    public List<int> specialEnemyIndices = new List<int>();
+
+    [Header("New Enemy Introduction")]
+    public int maxNewEnemiesPerWave = 1;
+    public float newEnemyPercentage = 0.3f;
 
     private Transform playerTransform;
     private int waveNumber = 0;
@@ -60,6 +71,7 @@ public class WavesManager : MonoBehaviour
             Destroy(this.gameObject);
         }
     }
+
     void Start()
     {
         playerTransform = PlayerManager.Instance.player.transform;
@@ -70,6 +82,7 @@ public class WavesManager : MonoBehaviour
         }
         waveCountdown = timeBetweenWaves;
     }
+
     void Update()
     {
         if (state == SpawnState.WAITING)
@@ -95,6 +108,7 @@ public class WavesManager : MonoBehaviour
             waveCountdown -= Time.deltaTime;
         }
     }
+
     Wave GenerateWave()
     {
         Wave wave = new Wave();
@@ -102,55 +116,199 @@ public class WavesManager : MonoBehaviour
         wave.spawnRate = baseSpawnRate + (waveNumber * rateMultiplier);
         wave.enemiesToSpawn = new List<GameObject>();
 
-        int totalEnemiesInWave = Mathf.FloorToInt(baseEnemyCount + (waveNumber * countMultiplier));
+        int totalEnemiesInWave = baseEnemyCount + Mathf.FloorToInt(waveNumber * countMultiplier);
+        totalEnemiesInWave = Mathf.Min(totalEnemiesInWave, 8 + waveNumber);
+
         int availableEnemyTypes = Mathf.Min(enemyPrefabs.Count, (waveNumber / wavesPerNewEnemy) + 1);
 
-        for (int i = 0; i < totalEnemiesInWave; i++)
+        bool shouldSpawnSpecialEnemy = ShouldSpawnSpecialEnemy();
+        int specialEnemyToSpawn = -1;
 
+        if (shouldSpawnSpecialEnemy)
         {
-            List<float> enemyWeights = new List<float>();
-            float totalWeights = 0f;
-
-            for (int enemyIndex = 0; enemyIndex < availableEnemyTypes; enemyIndex++)
+            specialEnemyToSpawn = GetSpecialEnemyToSpawn();
+            if (specialEnemyToSpawn != -1)
             {
-                float weight;
-                if (enemyIndex == 0)
-                {
-                    weight = 10f - (waveNumber * 0.2f);
-                    weight = Mathf.Max(3f, weight);
-                }
-                else
-                {
-                    int wavesAvailable = waveNumber - (enemyIndex * wavesPerNewEnemy);
-                    if (wavesAvailable < 0)
-                    {
-                        wavesAvailable = 0;
-                    }
-                    float difficultyMultiplier = 1f + (enemyIndex * 0.5f);
-                    weight = (wavesAvailable * 0.3f + 1f) * difficultyMultiplier;
-
-                    weight += (waveNumber * 0.1f * enemyIndex);
-                }
-                enemyWeights.Add(weight);
-                totalWeights += weight;
-            }
-
-            float randomValue = Random.value * totalWeights;
-            float currentWeight = 0f;
-
-            for (int j = 0; j < enemyWeights.Count; j++)
-            {
-                currentWeight += enemyWeights[j];
-                if (randomValue <= currentWeight)
-                {
-                    wave.enemiesToSpawn.Add(enemyPrefabs[j]);
-                    break;
-                }
+                wave.enemiesToSpawn.Add(enemyPrefabs[specialEnemyToSpawn]);
+                Debug.Log($"SPECIAL ENEMY INCOMING: {enemyPrefabs[specialEnemyToSpawn].name}!");
+                totalEnemiesInWave--;
             }
         }
 
+        int basicEnemyCount = Mathf.Max(1, totalEnemiesInWave / 2);
+
+        for (int i = 0; i < basicEnemyCount; i++)
+        {
+            wave.enemiesToSpawn.Add(enemyPrefabs[0]);
+        }
+
+        int remainingEnemies = totalEnemiesInWave - basicEnemyCount;
+
+        for (int i = 0; i < remainingEnemies; i++)
+        {
+            int selectedEnemyType = SelectRegularEnemyType(availableEnemyTypes);
+            wave.enemiesToSpawn.Add(enemyPrefabs[selectedEnemyType]);
+        }
+
+        if (ShouldIntroduceNewRegularEnemy(availableEnemyTypes))
+        {
+            IntroduceNewRegularEnemy(wave, availableEnemyTypes);
+        }
+
+        ShuffleWave(wave);
+
+        Debug.Log($"Wave {waveNumber + 1}: {wave.enemiesToSpawn.Count} enemies, {availableEnemyTypes} types available");
+
         return wave;
     }
+
+    bool ShouldSpawnSpecialEnemy()
+    {
+        if (waveNumber < specialEnemyStartWave) return false;
+
+        if (IsSpecialEnemyAlive()) return false;
+
+        return (waveNumber - specialEnemyStartWave) % specialEnemyFrequency == 0;
+    }
+
+    int GetSpecialEnemyToSpawn()
+    {
+        List<int> availableSpecialEnemies = new List<int>();
+
+        foreach (int specialIndex in specialEnemyIndices)
+        {
+            int enemyUnlockWave = specialIndex * wavesPerNewEnemy;
+            if (waveNumber >= enemyUnlockWave && specialIndex < enemyPrefabs.Count)
+            {
+                availableSpecialEnemies.Add(specialIndex);
+            }
+        }
+
+        if (availableSpecialEnemies.Count == 0) return -1;
+
+        return availableSpecialEnemies[Random.Range(0, availableSpecialEnemies.Count)];
+    }
+
+    bool IsSpecialEnemyAlive()
+    {
+        foreach (int specialIndex in specialEnemyIndices)
+        {
+            if (specialIndex < enemyPrefabs.Count)
+            {
+                string specialEnemyName = enemyPrefabs[specialIndex].name;
+                GameObject specialEnemy = GameObject.Find(specialEnemyName + "(Clone)");
+                if (specialEnemy != null)
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    int SelectRegularEnemyType(int availableTypes)
+    {
+        List<int> regularEnemyTypes = new List<int>();
+        for (int i = 0; i < availableTypes; i++)
+        {
+            if (!specialEnemyIndices.Contains(i))
+            {
+                regularEnemyTypes.Add(i);
+            }
+        }
+
+        if (regularEnemyTypes.Count == 0) return 0;
+
+        float[] weights = new float[regularEnemyTypes.Count];
+
+        for (int i = 0; i < regularEnemyTypes.Count; i++)
+        {
+            int enemyIndex = regularEnemyTypes[i];
+            if (enemyIndex == 0)
+            {
+                weights[i] = 10f;
+            }
+            else
+            {
+                float waveProgress = Mathf.Min(waveNumber / 10f, 1f);
+                weights[i] = 1f + (waveProgress * 3f * (1f / (enemyIndex + 1)));
+            }
+        }
+
+        int selectedWeightIndex = WeightedRandomSelect(weights);
+        return regularEnemyTypes[selectedWeightIndex];
+    }
+
+    int WeightedRandomSelect(float[] weights)
+    {
+        float totalWeight = 0f;
+        for (int i = 0; i < weights.Length; i++)
+        {
+            totalWeight += weights[i];
+        }
+
+        float randomValue = Random.value * totalWeight;
+        float currentWeight = 0f;
+
+        for (int i = 0; i < weights.Length; i++)
+        {
+            currentWeight += weights[i];
+            if (randomValue <= currentWeight)
+            {
+                return i;
+            }
+        }
+        return 0;
+    }
+
+    bool ShouldIntroduceNewRegularEnemy(int availableTypes)
+    {
+        return availableTypes > 1 && (waveNumber % wavesPerNewEnemy == 0) && waveNumber > 0;
+    }
+
+    void IntroduceNewRegularEnemy(Wave wave, int availableTypes)
+    {
+        int newEnemyIndex = -1;
+        for (int i = availableTypes - 1; i >= 0; i--)
+        {
+            if (!specialEnemyIndices.Contains(i))
+            {
+                newEnemyIndex = i;
+                break;
+            }
+        }
+
+        if (newEnemyIndex == -1 || newEnemyIndex == 0) return;
+
+        int newEnemyCount = Mathf.Max(1, Mathf.FloorToInt(wave.enemiesToSpawn.Count * newEnemyPercentage));
+        for (int i = wave.enemiesToSpawn.Count - 1; i >= 0 && newEnemyCount > 0; i--)
+        {
+            if (wave.enemiesToSpawn[i] == enemyPrefabs[0])
+            {
+                wave.enemiesToSpawn.RemoveAt(i);
+                newEnemyCount--;
+            }
+        }
+        newEnemyCount = Mathf.Max(1, Mathf.FloorToInt(wave.enemiesToSpawn.Count * newEnemyPercentage));
+        for (int i = 0; i < newEnemyCount; i++)
+        {
+            wave.enemiesToSpawn.Add(enemyPrefabs[newEnemyIndex]);
+        }
+
+        Debug.Log($"NEW REGULAR ENEMY INTRODUCED: {enemyPrefabs[newEnemyIndex].name}!");
+    }
+
+    void ShuffleWave(Wave wave)
+    {
+        for (int i = 0; i < wave.enemiesToSpawn.Count; i++)
+        {
+            GameObject temp = wave.enemiesToSpawn[i];
+            int randomIndex = Random.Range(i, wave.enemiesToSpawn.Count);
+            wave.enemiesToSpawn[i] = wave.enemiesToSpawn[randomIndex];
+            wave.enemiesToSpawn[randomIndex] = temp;
+        }
+    }
+
     void WaveCompleted()
     {
         Debug.Log("Wave " + (waveNumber + 1) + " completed!");
@@ -159,6 +317,7 @@ public class WavesManager : MonoBehaviour
         waveCountdown = timeBetweenWaves;
         currentSpawnIndex = 0;
     }
+
     bool EnemyIsAlive()
     {
         searchCountdown -= Time.deltaTime;
@@ -172,9 +331,10 @@ public class WavesManager : MonoBehaviour
         }
         return true;
     }
+
     IEnumerator SpawnWave(Wave _wave)
     {
-        Debug.Log("Spawning Wave: " + _wave.name + " with " + _wave.enemiesToSpawn.Count);
+        Debug.Log("Spawning Wave: " + _wave.name + " with " + _wave.enemiesToSpawn.Count + " enemies");
         state = SpawnState.SPAWNING;
 
         foreach (GameObject enemyToSpawn in _wave.enemiesToSpawn)
@@ -222,8 +382,8 @@ public class WavesManager : MonoBehaviour
         }
 
         currentSpawnIndex++;
-
     }
+
     Vector3 GetDistributedSpawnDirection()
     {
         float sectorAngle = 360f / spawnSectors;
@@ -236,147 +396,45 @@ public class WavesManager : MonoBehaviour
         Vector3 direction = new Vector3(Mathf.Cos(angleInRadians), 0, Mathf.Sin(angleInRadians));
 
         return direction.normalized;
-
     }
-    /*IEnumerator SpawnEnemyCoroutine(GameObject _enemy)
+
+    void OnDrawGizmosSelected()
     {
-        Vector2 randomDirection2D = Random.insideUnitCircle.normalized * Random.Range(minSpawnRadius, spawnRadius);
-        Vector3 randomPoint = playerTransform.position + new Vector3(randomDirection2D.x, 0, randomDirection2D.y);
-
-        NavMeshHit hit;
-        if (NavMesh.SamplePosition(Random.position, out hit, 10f, NavMesh.AllAreas))
+        Transform drawTarget = playerTransform;
+        if (drawTarget == null && PlayerManager.Instance != null && PlayerManager.Instance.player != null)
         {
-            Vector3 spawnPosition = hit.position;
-            GameObject enemyInstance = Instantiate(_enemy, spawnPosition, Quaternion.identity);
-            NevMeshAgent agent = enemyInstance.GetComponent<NavMeshAgent>();
-            if (agent != null)
-            {
-                agent.Warp(spawnPosition);
-                agent.enabled = true;
-                Debug.Log("Spawned enemy: " + _enemy.name + " at position: " + spawnPosition);
-                StartCoroutine(SpawnEnemyCoroutine(_enemy));
-            }
-            else
-            {
-                Debug.LogWarning("Spawned enemy does not have a NavMeshAgent component. Please add one to the enemy prefab.");
-            }
+            drawTarget = PlayerManager.Instance.player.transform;
         }
-        else
+        if (drawTarget == null)
         {
-            Debug.LogWarning("Could not find a valid spawn position on the NavMesh for an enemy.");
+            drawTarget = transform;
         }
-        yield return null;
-        spawnCountdown = 1f / _wave.spawnRate;
-        yield return new WaitForSeconds(spawnCountdown);
 
+        Vector3 centerPosition = drawTarget.position;
+
+        Gizmos.color = Color.red;
+        Gizmos.DrawWireSphere(centerPosition, minSpawnRadius);
+
+        Gizmos.color = Color.cyan;
+        float sectorAngle = 360f / spawnSectors;
+        for (int i = 0; i < spawnSectors; i++)
+        {
+            float angle = i * sectorAngle;
+            float angleInRadians = angle * Mathf.Deg2Rad;
+            Vector3 direction = new Vector3(Mathf.Cos(angleInRadians), 0, Mathf.Sin(angleInRadians));
+
+            Gizmos.DrawLine(centerPosition, centerPosition + direction * spawnRadius);
+
+            Vector3 arcStart = centerPosition + direction * minSpawnRadius;
+            Vector3 arcEnd = centerPosition + direction * spawnRadius;
+            Gizmos.DrawLine(arcStart, arcEnd);
+        }
+
+        Gizmos.color = new Color(1f, 0f, 0f, 0.1f);
+        Gizmos.DrawSphere(centerPosition, spawnRadius);
+
+        Gizmos.color = new Color(0f, 0f, 0f, 0.2f);
+        Gizmos.DrawSphere(centerPosition, minSpawnRadius);
     }
-    Wave GenerateWave2()
-    {
-        Wave wave = new Wave();
-        wave.name = "Wave " + (waveNumber + 1);
-        wave.spawnRate = baseSpawnRate + (waveNumber * rateMultiplier);
-        wave.enemiesToSpawn = new List<GameObject>();
-
-        int wavePoints = 10 + (waveNumber * 5);
-        int availableEnemyTypes = Mathf.Min(enemyPrefabs.Count, (waveNumber / wavesPerNewEnemy) + 1);
-
-        List<int> enemyCosts = new List<int>();
-        for (int i = 0; i < availableEnemyTypes; i++)
-        {
-            enemyCosts.Add(1 + (i * 2));
-        }
-
-        List<GameObjects> waveComposition = new List<GameObject>();
-
-        int guaranteedBasicPoints = Mathf.Max(3, wavePoints / 3);
-        int basicEnemiesCount = guaranteedBasicPoints / enemyCosts[0];
-        for (int i = 0; i < basicEnemiesCount; i++)
-        {
-            waveComposition.Add(enemyPrefabs[0]);
-        }
-        wavesPoints -= basicEnemiesCount * enemyCosts[0];
-
-        // Basically adds enemies based on the wave number with unites style
-        if (waveNumber >= 5 && availableEnemyTypes > 2)
-        {
-            int eliteChance = Mathf.Min(30, 10 + waveNumber * 2);
-            if (Random.Range(0, 100) < eliteChance)
-            {
-                int eliteIndex = availableEnemyTypes - 1;
-                if (wavePoints >= enemyCosts[eliteIndex])
-                {
-                    waveComposition.Add(enemyPrefabs[eliteIndex]);
-                    wavePoints -= enemyCosts[eliteIndex];
-                }
-            }
-        }
-        // Clustered enemies spawning and filling the points
-        while (wavePoints > 0)
-        {
-            List<int> affordableEnemies = new List<int>();
-            for (int i = 0; i < availableEnemyTypes; i++)
-            {
-                if (enemyCosts[i] <= wavePoints)
-                {
-                    affordableEnemies.Add(i);
-                }
-            }
-            if (affordableEnemies.Count == 0) break;
-
-            int selectedIndex;
-            if (affordableEnemies.Count == 1)
-            {
-                selectedIndex = affordableEnemies[0];
-            }
-            else
-            {
-                float rand = Rnadom.value;
-                if (rand < 0.3f && affordableEnemies.Contains(0))
-                {
-                    selectedOndex = 0;
-                }
-                else if (rand < 0.9f && affordableEnemies.Count > 1)
-                {
-                    int midTierIndex = Mathf.Min(affordableEnemies.Count - 1, Random.Range(1, 3));
-                    selectedIndex = affordableEnemies[midTierIndex];
-                }
-                else
-                {
-                    selectedIndex = affordableEnemies[affordableEnemies.Count - 1];
-                }
-            }
-            waveComposition.Add(enemyPrefabs[selectedIndex]);
-            wavePoints -= enemyCosts[selectedIndex];
-
-            if (Random.value < 0.4f && wavePoints >= enemyCosts[selectedIndex])
-            {
-                waveComposition.Add(enemyPrefabs[selectedIndex]);
-                wavePoints -= enemyCosts[selectedIndex];
-            }
-        }
-        for (int i = 0; i < waveComposition.Count; i++)
-        {
-            GameObject temp = waveComposition[i];
-            int randomIndex = Random.Range(i, waveComposition.Count);
-            waveComposition[i] = waveComposition[randomIndex];
-            waveComposition[randomIndex] = temp;
-        }
-        //special wave patterns
-        if ((waveNumber + 1) % 5 == 0 && availableEnemyTypes > 1)
-    {
-        // Boss wave - add extra elite enemies
-        int extraElites = Random.Range(1, 3);
-        for (int i = 0; i < extraElites; i++)
-        {
-            int eliteIndex = Random.Range(1, availableEnemyTypes);
-            waveComposition.Add(enemyPrefabs[eliteIndex]);
-        }
-        Debug.Log("BOSS WAVE! Extra elites incoming!");
-    }
-        waves.enemiesToSpawn = waveComposition;
-        return wave;
-    }*/
-    
-
+    // --- IGNORE ---
 }
-
