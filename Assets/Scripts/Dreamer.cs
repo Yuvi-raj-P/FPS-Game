@@ -8,6 +8,15 @@ public class Dreamer : MonoBehaviour
     public float rollForce = 5f;
     public float torqueForce = 5f;
     public float throwForceMultiplier = 1f;
+    public float minDiceRollTime;
+    public float maxDiceRollTime;
+
+    public bool spawnMultipleDice = false;
+
+    [Header("Multiple Dice Settings")]
+    public int minDiceCount = 2;
+    public int maxDiceCount = 5;
+    public float spawnRadius = 2f;
 
     //Effects and Cinematic stuff
     public GameObject eyesOpenImage;
@@ -19,6 +28,10 @@ public class Dreamer : MonoBehaviour
     [Header("Shaking Effect")]
     public float shakeDuration = 1f;
     public float shakeMagnitude = 10f;
+
+    [Header("Slow Motion Effect")]
+    public float slowMotionTimeScale = 0.3f;
+    public float slowMotionDuration = 3f;
 
     private Vector3 eyesClosedOriginalPos;
     private Coroutine currentShake;
@@ -60,11 +73,12 @@ public class Dreamer : MonoBehaviour
         }
 
     }
+    
     IEnumerator StartRollingDice()
     {
         while (true)
         {
-            float randomDelay = Random.Range(30f, 60f);
+            float randomDelay = Random.Range(minDiceRollTime, maxDiceRollTime);
             yield return new WaitForSeconds(randomDelay);
 
             if (eyesClosedImage.activeSelf && currentShake == null)
@@ -83,11 +97,43 @@ public class Dreamer : MonoBehaviour
             Debug.LogWarning("Die prefab or spawn point is not assigned in the Inspector.");
             return;
         }
+        StartCoroutine(SlowMotionEffect());
         StartCoroutine(ShowEyesShocked());
-        GameObject die1 = Instantiate(dicePrefab, spawnPoint.position, Random.rotation);
-        Destroy(die1, diceDestroyDelay);
-        Rigidbody rb1 = die1.GetComponent<Rigidbody>();
-        if (rb1 != null)
+
+        if(spawnMultipleDice){
+            int diceCount = Random.Range(minDiceCount, maxDiceCount + 1);
+
+            for(int i = 0; i < diceCount; i++){
+                SpawnSingleDie(i);
+            }
+            Debug.Log($"Total dice spawned: {diceCount}");
+        }
+        else{
+            SpawnSingleDie(0);
+        }
+    }
+    void SpawnSingleDie(int index)
+    {
+        Vector3 spawnPosition;
+        if (spawnMultipleDice)
+        {
+            Vector3 randomOffset = Random.insideUnitCircle * spawnRadius;
+            randomOffset.y = Mathf.Abs(randomOffset.y);
+            spawnPosition = spawnPoint.position + randomOffset;
+        }
+        else
+        {
+            spawnPosition = spawnPoint.position;
+        }
+
+        GameObject die = Instantiate(dicePrefab, spawnPosition, Random.rotation);
+        Destroy(die, diceDestroyDelay);
+        Rigidbody rb = die.GetComponent<Rigidbody>();
+
+        DiceRotator rotator = die.AddComponent<DiceRotator>();
+        rotator.Initialize(Random.insideUnitCircle * torqueForce);
+
+        if (rb != null)
         {
             Vector3 throwDirection = (spawnPoint.forward + (Vector3.up * 1f));
             throwDirection += new Vector3(
@@ -95,15 +141,28 @@ public class Dreamer : MonoBehaviour
                 Random.Range(-0.1f, 0.4f),
                 Random.Range(-0.9f, 0.9f)
             );
-            rb1.AddForce(throwDirection.normalized * rollForce * throwForceMultiplier, ForceMode.Impulse);
-            rb1.AddTorque(Random.insideUnitSphere * torqueForce, ForceMode.Impulse);
-            
-            
+            rb.AddForce(throwDirection.normalized * rollForce * throwForceMultiplier, ForceMode.Impulse);
+            rb.AddTorque(Random.insideUnitCircle * torqueForce, ForceMode.Impulse);
         }
-        
-
         int diceResult = Random.Range(1, 7);
-        Debug.Log("Dice rolled: " + diceResult);
+        if (spawnMultipleDice)
+        {
+            Debug.Log($"Dice {index + 1} rolled: {diceResult}");
+        }
+        else
+        {
+            Debug.Log("Dice rolled: " + diceResult);
+        }
+    }
+    IEnumerator SlowMotionEffect()
+    {
+        Time.timeScale = slowMotionTimeScale;
+        Time.fixedDeltaTime = 0.02f * Time.timeScale;
+
+        yield return new WaitForSeconds(slowMotionDuration);
+
+        Time.timeScale = 1f;
+        Time.fixedDeltaTime = 0.02f;
     }
     IEnumerator ShowEyesShocked()
     {
@@ -137,7 +196,7 @@ public class Dreamer : MonoBehaviour
             {
                 currentShake = StartCoroutine(ShakeRoutine(shakeDuration));
             }
-            
+
         }
     }
     IEnumerator ShakeRoutine(float duration)
@@ -155,9 +214,18 @@ public class Dreamer : MonoBehaviour
         eyesClosedImage.transform.localPosition = eyesClosedOriginalPos;
         currentShake = null;
     }
-    
+}
+
+public class DiceRotator : MonoBehaviour
+{
+    private Vector3 rotationSpeed;
+
+    public void Initialize(Vector3 torque)
+    {
+        rotationSpeed = torque;
+    }
     void Update()
     {
-        
+        transform.Rotate(rotationSpeed * Time.deltaTime);
     }
 }

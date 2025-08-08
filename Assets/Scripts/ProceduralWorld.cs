@@ -1,13 +1,38 @@
 using UnityEngine;
 using System.Collections.Generic;
-using UnityEngine.Scripting.APIUpdating;
+
 public class ProceduralWorld : MonoBehaviour
 {
     public Transform player;
     public int chunkSize = 10;
     public int renderDistance = 5;
-    public int maxPropsPerChunk = 4;
-    public float maxPropSize = 2f;
+
+    [Header("Material")]
+    public Material groundMaterial;
+    public Material[] scatteredPlaneMaterials;
+
+    [Header("Scattered Planes")]
+    public int minPlanesPerChunk = 4;
+    public int maxPlanesPerChunk = 8;
+    public Vector3 planeScale = new Vector3(1f, 1f, 1f);
+    public float planeSize = 0.5f;
+    public float minDistanceBetweenPlanes = 1.5f;
+    public bool useGridBasedGeneration = true;
+    public int gridSize = 3;
+
+    [Header("Props")]
+    public GameObject[] propPrefabs;
+    public int minPropsPerChunk = 1;
+    public int maxPropsPerChunk = 3;
+    public bool useGridBasedPropGeneration = true;
+    public int propGridSize = 2;
+    public float minDistanceBetweenProps = 2f;
+    public float propScaleVariation = 0.3f;
+
+    [Header("Fallback Props")]
+    public bool useFallbackCubes = true;
+    public float fallbackCubeMinSize = 0.5f;
+    public float fallbackCubeMaxSize = 2f;
     private Vector2Int currentPlayerChunk;
     private Dictionary<Vector2Int, GameObject> activeChunks = new Dictionary<Vector2Int, GameObject>();
 
@@ -85,227 +110,291 @@ public class ProceduralWorld : MonoBehaviour
         ground.transform.localPosition = Vector3.zero;
         ground.transform.localScale = new Vector3(chunkSize / 10f, 1, chunkSize / 10f);
 
-        int numberOfProps = Random.Range(0, maxPropsPerChunk + 1);
-        for (int i = 0; i < numberOfProps; i++)
+        if (groundMaterial != null)
         {
-            GameObject prop = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            prop.transform.parent = chunkObject.transform;
-
-            float randomScale = Random.Range(0.5f, maxPropSize);
-
-            prop.transform.localScale = Vector3.one * randomScale;
-
-            float randomX = Random.Range(-chunkSize / 2f, chunkSize / 2f);
-            float randomZ = Random.Range(-chunkSize / 2f, chunkSize / 2f);
-
-            prop.transform.localPosition = new Vector3(randomX, randomScale / 2f, randomZ);
-            prop.transform.rotation = Random.rotation;
-            prop.layer = LayerMask.NameToLayer("Obstacle");
+            Renderer groundRenderer = ground.GetComponent<Renderer>();
+            if (groundRenderer != null)
+            {
+                groundRenderer.material = groundMaterial;
+            }
         }
+
+        GenerateScatteredPlanes(chunkObject);
+
+        GenerateProps(chunkObject);
+
         activeChunks.Add(coord, chunkObject);
 
     }
-
-    /* No more NavMesh baking for the game. The agents have been changed to a manual follow script.
-    IEnumerator UpdateNavMeshCoroutine()
+    void GenerateScatteredPlanes(GameObject chunkObject)
     {
-        isUpdatingNavMesh = true;
-        Debug.Log("Starting NavMesh update...");
-
-        Enemy[] enemies = FindObjectsByType<Enemy>(FindObjectsSortMode.None);
-        NavMeshAgent[] agents = FindObjectsByType<NavMeshAgent>(FindObjectsSortMode.None);
-        foreach (var enemy in enemies)
+        if (scatteredPlaneMaterials == null || scatteredPlaneMaterials.Length == 0)
         {
-            if (enemy != null)
-            {
-                enemy.OnNavMeshUpdateStarted();
-            }
+            return;
         }
-
-        var agentStates = new Dictionary<NavMeshAgent, AgentState>();
-
-        foreach (var agent in agents)
+        if (useGridBasedGeneration)
         {
-            if (agent != null && agent.isActiveAndEnabled)
-            {
-                AgentState state = new AgentState
-                {
-                    position = agent.transform.position,
-                    velocity = Vector3.zero,
-                    destination = Vector3.zero,
-                    hasPath = false,
-                    isStopped = agent.isStopped
-                };
-                if (agent.isOnNavMesh)
-                {
-                    state.velocity = agent.velocity;
-                    state.hasPath = agent.hasPath;
-
-                    if (agent.hasPath)
-                    {
-                        state.destination = agent.destination;
-                    }
-                }
-                agentStates[agent] = state;
-                agent.isStopped = true;
-            }
-        }
-
-
-
-        yield return new WaitForSeconds(0.1f);
-
-        if (useAsyncNavMeshUpdate)
-        {
-            AsyncOperation bakeOperation = navMeshSurface.UpdateNavMesh(navMeshSurface.navMeshData);
-            while (!bakeOperation.isDone)
-            {
-                yield return null;
-            }
+            GeneratePlanesWithGrid(chunkObject);
         }
         else
         {
-            navMeshSurface.BuildNavMesh();
-        }
-
-        yield return new WaitForSeconds(0.2f);
-
-        foreach (var kvp in agentStates)
-        {
-            var agent = kvp.Key;
-            var state = kvp.Value;
-
-            if (agent != null && agent.isActiveAndEnabled)
-            {
-                bool warpSuccessful = false;
-                Vector3 targetPosition = state.position;
-
-                if (NavMesh.SamplePosition(state.position, out NavMeshHit hit, 5f, NavMesh.AllAreas))
-                {
-                    targetPosition = hit.position;
-                    warpSuccessful = agent.Warp(targetPosition);
-                }
-                if (!warpSuccessful)
-                {
-                    RaycastHit groundHit;
-                    Vector3 rayStart = state.position + Vector3.up * 10f;
-
-                    if (Physics.Raycast(rayStart, Vector3.down, out groundHit, 20f))
-                    {
-                        Vector3 groundPosition = groundHit.point;
-
-                        if (NavMesh.SamplePosition(groundPosition, out NavMeshHit navHit, 2f, NavMesh.AllAreas))
-                        {
-                            warpSuccessful = agent.Warp(navHit.position);
-                        }
-                    }
-                }
-                if (warpSuccessful)
-                {
-                    agent.isStopped = state.isStopped;
-
-                    if (state.hasPath && !state.isStopped)
-                    {
-                        StartCoroutine(DelayedSetDestination(agent, state.destination));
-                    }
-                }
-                else
-                {
-                    Debug.LogWarning($"Failed to warp agent {agent.name} to valid NavMesh position");
-                    agent.enabled = false;
-                    StartCoroutine(ReenableAgentAfterDelay(agent, 1f));
-                }
-            }
-        }
-        RestoreParkedEnemies();
-
-        yield return new WaitForSeconds(0.1f);
-
-        foreach (var enemy in enemies)
-        {
-            if (enemy != null)
-            {
-                enemy.OnNavMeshUpdateCompleted();
-            }
-        }
-
-        isUpdatingNavMesh = false;
-        Debug.Log("NavMesh updated successfully.");
-    }
-    void ParkEnemiesOnChunk(GameObject chunk)
-    {
-        Bounds chunkBounds = new Bounds(chunk.transform.position, new Vector3(chunkSize, 100, chunkSize));
-        Enemy[] allEnemies = FindObjectsByType<Enemy>(FindObjectsSortMode.None);
-        foreach (var enemy in allEnemies)
-        {
-            if (enemy != null && chunkBounds.Contains(enemy.transform.position))
-            {
-                if (!parkedEnemies.Contains(enemy))
-                {
-                    enemy.Park();
-                    parkedEnemies.Add(enemy);
-                    Debug.Log($"Parking enemy {enemy.name} on chunk being removed.");
-                }
-            }
-        }
-    }
-    void RestoreParkedEnemies()
-    {
-        for (int i = parkedEnemies.Count - 1; i >= 0; i--)
-        {
-            Enemy enemy = parkedEnemies[i];
-            if (enemy != null)
-            {
-                if (enemy.Restore())
-                {
-                    Debug.Log("Successfully restored parked enemy");
-                    parkedEnemies.RemoveAt(i);
-                }
-                else
-                {
-                    Debug.LogWarning("Filed to restore parked enemy");
-                }
-            }
-            else
-            {
-                parkedEnemies.RemoveAt(i);
-            }
-        }
-    }
-
-    IEnumerator ReenableAgentAfterDelay(NavMeshAgent agent, float delay)
-    {
-        yield return new WaitForSeconds(delay);
-        if (agent != null)
-        {
-            agent.enabled = true;
-
-            if (NavMesh.SamplePosition(agent.transform.position, out NavMeshHit hit, 5f, NavMesh.AllAreas))
-            {
-                agent.Warp(hit.position);
-            }
+            GeneratePlanesRandomly(chunkObject);
         }
 
     }
-    IEnumerator DelayedSetDestination(NavMeshAgent agent, Vector3 destination)
+    void GenerateProps(GameObject chunkObject)
     {
-        yield return new WaitForEndOfFrame();
-        if (agent != null && agent.isActiveAndEnabled && agent.isOnNavMesh)
+        if (propPrefabs == null || propPrefabs.Length == 0 && !useFallbackCubes)
         {
-            agent.SetDestination(destination);
+            return;
         }
-    }*/
 
-
-    /*private class AgentState
+        if (useGridBasedPropGeneration)
+        {
+            GeneratePropsWithGrid(chunkObject);
+        }
+        else
+        {
+            GeneratePropsRandomly(chunkObject);
+        }
+    }
+    void GeneratePropsWithGrid(GameObject chunkObject)
     {
-        public Vector3 position;
-        public Vector3 velocity;
-        public Vector3 destination;
-        public bool hasPath;
-        public bool isStopped;
+        int numberOfProps = Random.Range(minPropsPerChunk, maxPropsPerChunk + 1);
+        List<Vector2Int> availableGridCells = new List<Vector2Int>();
 
-    }*/
+        for (int x = 0; x < propGridSize; x++)
+        {
+            for (int z = 0; z < propGridSize; z++)
+            {
+                availableGridCells.Add(new Vector2Int(x, z));
+            }
+        }
+        for (int i = 0; i < availableGridCells.Count; i++)
+        {
+            Vector2Int temp = availableGridCells[i];
+            int randomIndex = Random.Range(i, availableGridCells.Count);
+            availableGridCells[i] = availableGridCells[randomIndex];
+            availableGridCells[randomIndex] = temp;
+        }
+
+        for (int i = 0; i < numberOfProps && i < availableGridCells.Count; i++)
+        {
+            Vector2Int gridCell = availableGridCells[i];
+            Vector3 propPosition = GetPropGridCellPosition(gridCell, chunkObject.transform.position);
+            CreateProp(propPosition, chunkObject);
+        }
+    }
+    void GeneratePropsRandomly(GameObject chunkObject)
+    {
+        List<Vector3> occupiedPositions = new List<Vector3>();
+        int numberOfProps = Random.Range(minPropsPerChunk, maxPropsPerChunk + 1);
+
+        for (int i = 0; i < numberOfProps; i++)
+        {
+            Vector3 propPosition = GetValidPropPosition(occupiedPositions, chunkObject.transform.position);
+
+            if (propPosition != Vector3.zero)
+            {
+                CreateProp(propPosition, chunkObject);
+                occupiedPositions.Add(propPosition);
+            }
+        }
+    }
+    Vector3 GetPropGridCellPosition(Vector2Int gridCell, Vector3 chunkCenter)
+    {
+        float cellSize = (float)chunkSize / propGridSize;
+        float offsetX = (gridCell.x * cellSize) - (chunkSize / 2f) + (cellSize / 2f);
+        float offsetZ = (gridCell.y * cellSize) - (chunkSize / 2f) + (cellSize / 2f);
+
+        float randomX = Random.Range(-cellSize * 0.4f, cellSize * 0.4f);
+        float randomZ = Random.Range(-cellSize * 0.4f, cellSize * 0.4f);
+
+        return chunkCenter + new Vector3(offsetX + randomX, 0, offsetZ + randomZ);
+    }
+
+    void CreateProp(Vector3 position, GameObject chunkObject)
+    {
+        GameObject prop;
+
+        if (propPrefabs != null && propPrefabs.Length > 0)
+        {
+            GameObject selectedPrefab = propPrefabs[Random.Range(0, propPrefabs.Length)];
+            prop = Instantiate(selectedPrefab, position, Quaternion.identity);
+            
+            prop.transform.parent = chunkObject.transform;
+
+            //float scaleMultiplier = Random.Range(1f - propScaleVariation, 1f + propScaleVariation);
+            
+            //prop.transform.localScale *= scaleMultiplier;
+        }
+        else if (useFallbackCubes)
+        {
+            prop = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            prop.name = "FallbackCube";
+            prop.transform.parent = chunkObject.transform;
+            prop.transform.position = position;
+            prop.transform.rotation = Random.rotation;
+
+            float randomSize = Random.Range(fallbackCubeMinSize, fallbackCubeMaxSize);
+            prop.transform.localScale = Vector3.one * randomSize;
+        }
+        else
+        {
+            return;
+        }
+
+        prop.transform.position = new Vector3(position.x, 0, position.z);
+
+        prop.layer = LayerMask.NameToLayer("Obstacle");
+    }
+    Vector3 GetValidPropPosition(List<Vector3> occupiedPositions, Vector3 chunkCenter)
+    {
+        int maxAttempts = 30;
+
+        for (int attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            float randomX = Random.Range(-chunkSize / 2f, chunkSize / 2f);
+            float randomZ = Random.Range(-chunkSize / 2f, chunkSize / 2f);
+
+            Vector3 candidatePosition = chunkCenter + new Vector3(randomX, 0f, randomZ);
+
+            bool validPosition = true;
+
+            foreach (Vector3 occupiedPos in occupiedPositions)
+            {
+                if (Vector3.Distance(candidatePosition, occupiedPos) < minDistanceBetweenProps)
+                {
+                    validPosition = false;
+                    break;
+                }
+            }
+            if (validPosition)
+            {
+                return candidatePosition;
+            }
+        }
+        return Vector3.zero;
+    }
+    Bounds GetObjectBounds(GameObject obj)
+    {
+        Bounds bounds = new Bounds(obj.transform.position, Vector3.zero);
+        Renderer[] renderers = obj.GetComponentsInChildren<Renderer>();
+
+        foreach (Renderer renderer in renderers)
+        {
+            bounds.Encapsulate(renderer.bounds);
+        }
+        return bounds;
+    }
+    void GeneratePlanesWithGrid(GameObject chunkObject)
+    {
+        int numberOfPlanes = Random.Range(minPlanesPerChunk, maxPlanesPerChunk + 1);
+        List<Vector2Int> availableGridCells = new List<Vector2Int>();
+
+        for (int x = 0; x < gridSize; x++)
+        {
+            for (int z = 0; z < gridSize; z++)
+            {
+                availableGridCells.Add(new Vector2Int(x, z));
+            }
+        }
+        for (int i = 0; i < availableGridCells.Count; i++)
+        {
+            Vector2Int temp = availableGridCells[i];
+            int randomIndex = Random.Range(i, availableGridCells.Count);
+            availableGridCells[i] = availableGridCells[randomIndex];
+            availableGridCells[randomIndex] = temp;
+        }
+        for (int i = 0; i < numberOfPlanes && i < availableGridCells.Count; i++)
+        {
+            Vector2Int gridCell = availableGridCells[i];
+            Vector3 planePosition = GetGridCellPosition(gridCell, chunkObject.transform.position);
+            CreateScatteredPlane(planePosition, chunkObject);
+        }
+    }
+    void GeneratePlanesRandomly(GameObject chunkObject)
+    {
+        List<Vector3> occupidedPositions = new List<Vector3>();
+        int numberOfPlanes = Random.Range(minPlanesPerChunk, maxPlanesPerChunk + 1);
+
+        for (int i = 0; i < numberOfPlanes; i++)
+        {
+            Vector3 planePosition = GetValidPlanePosition(occupidedPositions, chunkObject.transform.position);
+            if (planePosition != Vector3.zero)
+            {
+                CreateScatteredPlane(planePosition, chunkObject);
+                occupidedPositions.Add(planePosition);
+            }
+        }
+    }
+    Vector3 GetGridCellPosition(Vector2Int gridCell, Vector3 chunkCenter)
+    {
+        float cellSize = (float)chunkSize / gridSize;
+        float offsetX = (gridCell.x * cellSize) - (chunkSize / 2f) + (cellSize / 2f);
+        float offsetZ = (gridCell.y * cellSize) - (chunkSize / 2f) + (cellSize / 2f);
+
+        float randomX = Random.Range(-cellSize * 0.3f, cellSize * 0.3f);
+        float randomZ = Random.Range(-cellSize * 0.3f, cellSize * 0.3f);
+
+        return chunkCenter + new Vector3(offsetX + randomX, 0.01f, offsetZ + randomZ);
+    }
+    void CreateScatteredPlane(Vector3 position, GameObject chunkObject)
+    {
+        GameObject scatteredPlane = GameObject.CreatePrimitive(PrimitiveType.Plane);
+        scatteredPlane.name = "ScatteredPlane";
+        scatteredPlane.transform.parent = chunkObject.transform;
+        scatteredPlane.transform.position = position;
+
+        Vector3 finalScale = new Vector3(
+            planeScale.x / 10f,
+            planeScale.y / 10f,
+            planeScale.z / 10f
+        );
+        scatteredPlane.transform.localScale = finalScale;
+
+        scatteredPlane.transform.rotation = Quaternion.Euler(0, Random.Range(0f, 360f), 0);
+
+        MeshCollider meshCollider = scatteredPlane.GetComponent<MeshCollider>();
+        if (meshCollider != null)
+        {
+            DestroyImmediate(meshCollider);
+        }
+        Material randomMaterial = scatteredPlaneMaterials[Random.Range(0, scatteredPlaneMaterials.Length)];
+        Renderer planeRenderer = scatteredPlane.GetComponent<Renderer>();
+        if (planeRenderer != null && randomMaterial != null)
+        {
+            planeRenderer.material = randomMaterial;
+        }
+
+    }
+    Vector3 GetValidPlanePosition(List<Vector3> occupiedPositions, Vector3 chunkCenter)
+    {
+        int maxAttempts = 50;
+
+        for (int attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            float randomX = Random.Range(-chunkSize / 2f, chunkSize / 2f);
+            float randomZ = Random.Range(-chunkSize / 2f, chunkSize / 2f);
+            Vector3 candidatePosition = chunkCenter + new Vector3(randomX, 0.01f, randomZ);
+
+            bool validPosition = true;
+
+            foreach (Vector3 occupiedPos in occupiedPositions)
+            {
+                if (Vector3.Distance(candidatePosition, occupiedPos) < minDistanceBetweenPlanes)
+                {
+                    validPosition = false;
+                    break;
+                }
+            }
+            if (validPosition)
+            {
+                return candidatePosition;
+            }
+        }
+        return Vector3.zero;
+    }
 }
 
      
