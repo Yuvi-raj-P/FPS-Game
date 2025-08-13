@@ -1,5 +1,8 @@
 using UnityEngine;
 using System.Collections.Generic;
+using System.Collections;
+using UnityEngine.Rendering.Universal;
+using UnityEngine.Rendering;
 
 public class ProceduralWorld : MonoBehaviour
 {
@@ -37,6 +40,24 @@ public class ProceduralWorld : MonoBehaviour
     private Dictionary<Vector2Int, GameObject> activeChunks = new Dictionary<Vector2Int, GameObject>();
 
     public Quaternion Quarentation { get; private set; }
+
+    //Abilities
+    private List<DreamAbility> availableAbilities;
+    private DreamAbility currentAbility;
+    private bool abilityActive = false;
+
+    private Vector3 eyesClosedOriginalPos;
+    private Coroutine currentShake;
+    private ColorAdjustments colorAdjustments;
+
+    public enum AbilityType
+    {
+        FogOfThought
+    }
+    public class DreamAbility
+    {
+        public AbilityType type;
+    }
 
     void Start()
     {

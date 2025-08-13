@@ -17,8 +17,8 @@ public class PlayerLook : MonoBehaviour
     void Awake()
     {
         #if UNITY_EDITOR
-            xSensitivity = 300f;
-            ySensitivity = 300f;
+            xSensitivity = 200f;
+            ySensitivity = 200f;
         #else
             xSensitivity = 50f;
             ySensitivity = 50f;
