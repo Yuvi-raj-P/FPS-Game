@@ -1,8 +1,6 @@
 using UnityEngine;
 using System.Collections.Generic;
-using System.Collections;
 using UnityEngine.Rendering.Universal;
-using UnityEngine.Rendering;
 
 public class ProceduralWorld : MonoBehaviour
 {
@@ -36,9 +34,15 @@ public class ProceduralWorld : MonoBehaviour
     public bool useFallbackCubes = true;
     public float fallbackCubeMinSize = 0.5f;
     public float fallbackCubeMaxSize = 2f;
+
+    [Header("Player Spawn Protection")]
+    public float playerSpawnClearRadius = 5f;
+    public bool clearAdjacentChunks = true;
+
     private Vector2Int currentPlayerChunk;
     private Dictionary<Vector2Int, GameObject> activeChunks = new Dictionary<Vector2Int, GameObject>();
-
+    private Vector2Int initialPlayerChunk;
+    private Vector3 initialPlayerPosition;
     public Quaternion Quarentation { get; private set; }
 
     //Abilities
@@ -68,6 +72,9 @@ public class ProceduralWorld : MonoBehaviour
             this.enabled = false;
             return;
         }
+
+        initialPlayerPosition = player.position;
+        initialPlayerChunk = GetChunkCoordFromPosition(player.position);
         UpdateChunks();
     }
     void Update()
@@ -118,6 +125,29 @@ public class ProceduralWorld : MonoBehaviour
             }
         }
     }
+    bool IsChunkNearPlayerSpawn(Vector2Int chunkCoord)
+    {
+        if (chunkCoord == initialPlayerChunk)
+        {
+            return true;
+        }
+        if (clearAdjacentChunks)
+        {
+            int deltaX = Mathf.Abs(chunkCoord.x - initialPlayerChunk.x);
+            int deltaZ = Mathf.Abs(chunkCoord.y - initialPlayerChunk.y);
+
+            if (deltaX <= 1 && deltaZ <= 1)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+    bool IsPositionNearPlayerSpawn(Vector3 position)
+    {
+        float distanceToSpawn = Vector3.Distance(position, initialPlayerPosition);
+        return distanceToSpawn <= playerSpawnClearRadius;
+    }
     void GenerateChunk(Vector2Int coord)
     {
         GameObject chunkObject = new GameObject($"Chunk_{coord.x}_{coord.y}");
@@ -139,13 +169,20 @@ public class ProceduralWorld : MonoBehaviour
                 groundRenderer.material = groundMaterial;
             }
         }
-
-        GenerateScatteredPlanes(chunkObject);
-
-        GenerateProps(chunkObject);
+        bool isNearPlayerSpawn = IsChunkNearPlayerSpawn(coord);
+        
+        if (!isNearPlayerSpawn)
+        {
+            GenerateScatteredPlanes(chunkObject);
+            GenerateProps(chunkObject);
+            //Debug.Log($"Generated content for chunk {coord} (distance from spawn: {Vector3.Distance(chunkObject.transform.position, initialPlayerPosition):F1})");
+        }
+        else
+        {
+            Debug.Log($"Skipped content generation for chunk {coord} (too close to player spawn)");
+        }
 
         activeChunks.Add(coord, chunkObject);
-
     }
     void GenerateScatteredPlanes(GameObject chunkObject)
     {
@@ -203,7 +240,10 @@ public class ProceduralWorld : MonoBehaviour
         {
             Vector2Int gridCell = availableGridCells[i];
             Vector3 propPosition = GetPropGridCellPosition(gridCell, chunkObject.transform.position);
-            CreateProp(propPosition, chunkObject);
+            if (!IsPositionNearPlayerSpawn(propPosition))
+            {
+                CreateProp(propPosition, chunkObject);
+            }
         }
     }
     void GeneratePropsRandomly(GameObject chunkObject)
@@ -215,7 +255,7 @@ public class ProceduralWorld : MonoBehaviour
         {
             Vector3 propPosition = GetValidPropPosition(occupiedPositions, chunkObject.transform.position);
 
-            if (propPosition != Vector3.zero)
+            if (propPosition != Vector3.zero && !IsPositionNearPlayerSpawn(propPosition))
             {
                 CreateProp(propPosition, chunkObject);
                 occupiedPositions.Add(propPosition);
@@ -320,6 +360,7 @@ public class ProceduralWorld : MonoBehaviour
                 availableGridCells.Add(new Vector2Int(x, z));
             }
         }
+
         for (int i = 0; i < availableGridCells.Count; i++)
         {
             Vector2Int temp = availableGridCells[i];
@@ -327,25 +368,31 @@ public class ProceduralWorld : MonoBehaviour
             availableGridCells[i] = availableGridCells[randomIndex];
             availableGridCells[randomIndex] = temp;
         }
+
         for (int i = 0; i < numberOfPlanes && i < availableGridCells.Count; i++)
         {
             Vector2Int gridCell = availableGridCells[i];
             Vector3 planePosition = GetGridCellPosition(gridCell, chunkObject.transform.position);
-            CreateScatteredPlane(planePosition, chunkObject);
+            
+            
+            if (!IsPositionNearPlayerSpawn(planePosition))
+            {
+                CreateScatteredPlane(planePosition, chunkObject);
+            }
         }
     }
     void GeneratePlanesRandomly(GameObject chunkObject)
     {
-        List<Vector3> occupidedPositions = new List<Vector3>();
+        List<Vector3> occupiedPositions = new List<Vector3>();
         int numberOfPlanes = Random.Range(minPlanesPerChunk, maxPlanesPerChunk + 1);
 
         for (int i = 0; i < numberOfPlanes; i++)
         {
-            Vector3 planePosition = GetValidPlanePosition(occupidedPositions, chunkObject.transform.position);
-            if (planePosition != Vector3.zero)
+            Vector3 planePosition = GetValidPlanePosition(occupiedPositions, chunkObject.transform.position);
+            if (planePosition != Vector3.zero && !IsPositionNearPlayerSpawn(planePosition))
             {
                 CreateScatteredPlane(planePosition, chunkObject);
-                occupidedPositions.Add(planePosition);
+                occupiedPositions.Add(planePosition);
             }
         }
     }

@@ -14,6 +14,18 @@ public class Gun : MonoBehaviour
     public float currentReloadTime { get; private set; }
     public bool isScoped = false;
 
+    [Header("Audio")]
+    public AudioSource gunShotAudioSource;
+    [Range(0.8f, 1.2f)]
+    public float minPitch = 0.9f;
+    [Range(0.8f, 1.2f)]
+    public float maxPitch = 1.1f;
+    [Range(0.8f, 1.2f)]
+    public float minVolume = 0.9f;
+    [Range(0.8f, 1.2f)]
+    public float maxVolume = 1.0f;
+
+
     [Header("Ammo")]
     public int magazineSize = 30;
     public int currentAmmo;
@@ -32,9 +44,16 @@ public class Gun : MonoBehaviour
     public float minMuzzleFlashDuration = 0.05f;
     public float maxMuzzleFlashDuration = 0.15f;
 
+    [Header("Camera Effects")]
+    public CameraShake cameraShake;
+    public float shakeDuration = 0.15f;
+    public float shakeMagnitude = 0.4f;
+
     private float nextTimeToFire = 0f;
 
     private Animator animator;
+    private float originalPitch;
+    private float originalVolume;
 
     //Dream Mode
     public ParticleSystem dreamModeParticles;
@@ -48,6 +67,12 @@ public class Gun : MonoBehaviour
         scopedDamage = damage * scopedDamageMultiplier;
         muzzleFlash.SetActive(false);
         animator = GetComponent<Animator>();
+
+        if (gunShotAudioSource != null)
+        {
+            originalPitch = gunShotAudioSource.pitch;
+            originalVolume = gunShotAudioSource.volume;
+        }
     }
     void Start()
     {
@@ -93,7 +118,7 @@ public class Gun : MonoBehaviour
                 damage = isScoped ? 20f : 10f;
             }
         }
-        
+
         if (currentAmmo < magazineSize && Keyboard.current.rKey.wasPressedThisFrame)
         {
             StartCoroutine(Reload());
@@ -153,12 +178,24 @@ public class Gun : MonoBehaviour
         currentAmmo--;
         muzzleFlash.transform.localRotation = Quaternion.Euler(Random.Range(0f, 360f), -90, 0);
         muzzleFlash.SetActive(true);
+        StartCoroutine(cameraShake.Shake(shakeDuration, shakeMagnitude));
+
+        if (gunShotAudioSource != null)
+        {
+            float randomPitch = Random.Range(minPitch, maxPitch);
+            float randomVolume = Random.Range(minVolume, maxVolume);
+
+            gunShotAudioSource.pitch = randomPitch;
+            gunShotAudioSource.PlayOneShot(gunShotAudioSource.clip, randomVolume);
+
+            StartCoroutine(ResetAudioAfterShot());
+        }
 
         RaycastHit hit;
         if (Physics.Raycast(fpsCam.transform.position, fpsCam.transform.forward, out hit, range))
         {
             Debug.Log("Hit: " + hit.transform.name);
-            
+
 
             Damage damageScript = hit.transform.GetComponent<Damage>();
             if (damageScript != null)
@@ -172,7 +209,15 @@ public class Gun : MonoBehaviour
         yield return new WaitForSeconds(randomDuration);
         muzzleFlash.SetActive(false);
 
-        
+
+    }
+    IEnumerator ResetAudioAfterShot()
+    {
+        yield return new WaitForSeconds(0.1f);
+        if (gunShotAudioSource != null)
+        {
+            gunShotAudioSource.pitch = originalPitch;
+        }
     }
 }
 

@@ -1,9 +1,6 @@
 using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
-using UnityEngine.Scripting.APIUpdating;
-using UnityEngine.UI;
-using UnityEditor;
 
 [System.Serializable]
 public class Wave
@@ -11,6 +8,23 @@ public class Wave
     public string name;
     public List<GameObject> enemiesToSpawn;
     public float spawnRate;
+}
+
+
+[System.Serializable]
+public class RareItem
+{
+    public GameObject itemPrefab;
+    public string itemName;
+    [Range(0f, 100f)]
+    public float spawnProbability = 5f;
+    public float cooldownTime = 30f;
+    public int maxInstancesOnMap = 1;
+    public bool canSpawnMultiple = false;
+    public int minimumWaveToSpawn = 2;
+
+    public float lastSpawnTime = 1f;
+    public bool IsOnCooldown => Time.time - lastSpawnTime < cooldownTime;
 }
 
 public class WavesManager : MonoBehaviour
@@ -52,12 +66,23 @@ public class WavesManager : MonoBehaviour
     public int maxNewEnemiesPerWave = 1;
     public float newEnemyPercentage = 0.3f;
 
+    [Header("Rare Item Spawning")]
+    public List<RareItem> rareItems = new List<RareItem>();
+    public bool enableRareItemSpawning = true;
+    public float rareItemCheckInterval = 20f;
+    public float rareItemSpawnRadius = 40f;
+    public float rareItemMinSpawnRadius = 25f;
+    public float probabilityMultiplierPerWave = 1.1f;
+
     private Transform playerTransform;
     private int waveNumber = 0;
     private float waveCountdown;
     private float searchCountdown = 1f;
     private SpawnState state = SpawnState.COUNTING;
     private int currentSpawnIndex = 0;
+
+    private float rareItemCheckCountdown;
+    public int CurrentWaveNumber { get { return waveNumber; } }
 
     void Awake()
     {
@@ -81,6 +106,7 @@ public class WavesManager : MonoBehaviour
             this.enabled = false;
         }
         waveCountdown = timeBetweenWaves;
+        rareItemCheckCountdown = rareItemCheckInterval;
     }
 
     void Update()
@@ -106,6 +132,117 @@ public class WavesManager : MonoBehaviour
         else
         {
             waveCountdown -= Time.deltaTime;
+        }
+
+        if (enableRareItemSpawning)
+        {
+            rareItemCheckCountdown -= Time.deltaTime;
+            if (rareItemCheckCountdown <= 0f)
+            {
+                CheckRareItemSpawning();
+                rareItemCheckCountdown = rareItemCheckInterval;
+            }
+        }
+    }
+    void CheckRareItemSpawning()
+    {
+        if (waveNumber < 1) return;
+        foreach (RareItem item in rareItems)
+        {
+            if (ShouldSpawnRareItem(item))
+            {
+                TrySpawnRareItem(item);
+            }
+        }
+    }
+    bool ShouldSpawnRareItem(RareItem item)
+    {
+        if (waveNumber < item.minimumWaveToSpawn) return false;
+        if (item.IsOnCooldown) return false;
+
+        if (!item.canSpawnMultiple && GetRareItemInstanceCount(item) >= item.maxInstancesOnMap)
+        {
+            return false;
+        }
+
+        float finalProbability = item.spawnProbability;
+        int wavesProgressed = waveNumber - item.minimumWaveToSpawn;
+        finalProbability *= Mathf.Pow(probabilityMultiplierPerWave, wavesProgressed);
+        finalProbability = Mathf.Min(finalProbability, 50f);
+
+        float roll = Random.Range(0f, 100f);
+        bool shouldSpawn = roll <= finalProbability;
+
+        return shouldSpawn;
+    }
+    void TrySpawnRareItem(RareItem item)
+    {
+        Vector3 spawnPosition;
+        if (FindValidRareItemSpawnPosition(out spawnPosition))
+        {
+            GameObject spawnedItem = Instantiate(item.itemPrefab, spawnPosition, Quaternion.identity);
+            item.lastSpawnTime = Time.time;
+
+            if (spawnedItem.tag == "Untagged")
+            {
+                spawnedItem.tag = "RareItem";
+            }
+            Debug.Log($"Spawned rare item: {item.itemName} at {spawnPosition}");
+        }
+        else
+        {
+            Debug.LogWarning($"Failed to find valid spawn position for rare item: {item.itemName}");
+        }
+    }
+    bool FindValidRareItemSpawnPosition(out Vector3 spawnPosition)
+    {
+        spawnPosition = Vector3.zero;
+        for (int attempt = 0; attempt < maxSpawnAttempts; attempt++)
+        {
+            float randomAngle = Random.Range(0f, 360f) * Mathf.Deg2Rad;
+            float randomDistance = Random.Range(rareItemMinSpawnRadius, rareItemSpawnRadius);
+
+            Vector3 direction = new Vector3(Mathf.Cos(randomAngle), 0, Mathf.Sin(randomAngle));
+            Vector3 randomPoint = playerTransform.position + (direction * randomDistance);
+            randomPoint.y += spawnHeight;
+
+            RaycastHit hit;
+            if (Physics.Raycast(randomPoint, Vector3.down, out hit, spawnHeight + 10f, groundLayerMask))
+            {
+                spawnPosition = hit.point + Vector3.up * 0.1f;
+                return true;
+            }
+        }
+        return false;
+    }
+    int GetRareItemInstanceCount(RareItem item)
+    {
+        string itemName = item.itemPrefab.name;
+        GameObject[] existingItems = GameObject.FindGameObjectsWithTag("RareItem");
+
+        int count = 0;
+        foreach (GameObject obj in existingItems)
+        {
+            if (obj.name.Contains(itemName))
+            {
+                count++;
+            }
+        }
+        return count;
+    }
+    public void ForceSpawnRareItem(int itemIndex)
+    {
+        if (itemIndex >= 0 && itemIndex < rareItems.Count)
+        {
+            TrySpawnRareItem(rareItems[itemIndex]);
+        }
+    }
+    public void ClearAllRareItems()
+    {
+        GameObject[] rareItems = GameObject.FindGameObjectsWithTag("RareItem");
+        foreach (GameObject item in rareItems)
+        {
+            DestroyImmediate(item);
         }
     }
 
@@ -436,5 +573,4 @@ public class WavesManager : MonoBehaviour
         Gizmos.color = new Color(0f, 0f, 0f, 0.2f);
         Gizmos.DrawSphere(centerPosition, minSpawnRadius);
     }
-    // --- IGNORE ---
 }

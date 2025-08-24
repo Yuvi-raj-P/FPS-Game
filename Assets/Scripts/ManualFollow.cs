@@ -20,8 +20,11 @@ public class ManualFollow : MonoBehaviour
     private Vector3 targetPositionOffset;
     public float targetOffsetUpdateTime = 2f;
 
+    [Header("Animation Settings")]
+    public Animator animator;
+
     private float currentSpeed;
-    private Vector3 moveDirection; 
+    private Vector3 moveDirection;
     private CharacterController controller;
     private Health playerHealth;
 
@@ -31,9 +34,29 @@ public class ManualFollow : MonoBehaviour
     public float attackRange = 2.5f;
     private float nextAttackTime = 0f;
 
-    // Unused variables can be removed.
-    // private Vector3 avoidanceDirection;
-    // private float avoidanceTimer;
+    [Header("Debug info")]
+    public bool isStuck = false;
+    public float stuckCheckTime = 2f;
+    public float stuckMovementThreshold = 1f; // Minimum units to move per second
+
+    public float igonareObstaclesDuration = 3f;
+    public bool isIgnoringObstacles = false;
+
+    
+
+    [Header("Self Destruct")]
+    public float maxStuckTime = 20f;
+    public bool enableSelfDestruct = true;
+    public float totalStuckTime = 0f;
+
+    private Vector3 lastPosition;
+    private float stuckTimer = 0f;
+    private float ignoreObstaclesTimer = 0f;
+    private LayerMask originalObstacleLayerMask;
+
+    private Vector3 positionSampleStart;
+    private float positionSampleTimer = 0f;
+    private float movementSamplePeriod = 1f;
 
     void Start()
     {
@@ -44,6 +67,8 @@ public class ManualFollow : MonoBehaviour
         maxSpeed *= Random.Range(0.9f, 1.1f);
         stoppingDistance *= Random.Range(0.9f, 1.2f);
 
+        originalObstacleLayerMask = obstacleLayerMask;
+        
         if (player != null)
         {
             playerHealth = player.GetComponent<Health>();
@@ -52,8 +77,11 @@ public class ManualFollow : MonoBehaviour
                 Debug.LogWarning($"ManualFollow on {gameObject.name}: Could not find Health component on player!");
             }
         }
+        lastPosition = transform.position;
+        positionSampleStart = transform.position;
         InvokeRepeating(nameof(UpdateTargetOffset), 0, targetOffsetUpdateTime);
     }
+
     void UpdateTargetOffset()
     {
         targetPositionOffset = Random.insideUnitSphere * (stoppingDistance * 0.5f);
@@ -64,6 +92,127 @@ public class ManualFollow : MonoBehaviour
     {
         HandleMovement();
         HandleAttack();
+        CheckIfStuck();
+        HandleObstacleIgnoring();
+    }
+
+    void CheckIfStuck()
+    {
+        float distanceToPlayer = Vector3.Distance(transform.position, player.position);
+
+        if (distanceToPlayer > stoppingDistance)
+        {
+            positionSampleTimer += Time.deltaTime;
+
+            if (positionSampleTimer >= movementSamplePeriod)
+            {
+                float totalDistanceMoved = Vector3.Distance(transform.position, positionSampleStart);
+                
+                if (totalDistanceMoved < stuckMovementThreshold)
+                {
+                    stuckTimer += movementSamplePeriod;
+                    
+                    if (stuckTimer >= stuckCheckTime)
+                    {
+                        if (!isStuck)
+                        {
+                            StartIgnoringObstacles();
+                            Debug.Log($"{gameObject.name} detected as stuck - moved only {totalDistanceMoved:F2} units in {movementSamplePeriod} second(s)");
+                        }
+                        isStuck = true;
+                        
+                        if (enableSelfDestruct)
+                        {
+                            totalStuckTime += movementSamplePeriod;
+                            if (totalStuckTime >= maxStuckTime)
+                            {
+                                SelfDestruct();
+                                return;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    stuckTimer = 0f;
+                    totalStuckTime = 0f;
+                    isStuck = false;
+                }
+                
+                // Reset sample tracking
+                positionSampleStart = transform.position;
+                positionSampleTimer = 0f;
+            }
+        }
+        else
+        {
+            isStuck = false;
+            stuckTimer = 0f;
+            totalStuckTime = 0f;
+            positionSampleStart = transform.position;
+            positionSampleTimer = 0f;
+        }
+        lastPosition = transform.position;
+    }
+
+    void SelfDestruct()
+    {
+        if (isIgnoringObstacles)
+        {
+            StopIgnoringObstacles();
+        }
+        Debug.Log($"{gameObject.name} is self-destructing after being stuck for too long!");
+        Destroy(this.gameObject);
+    }
+
+    void HandleObstacleIgnoring()
+    {
+        if (isIgnoringObstacles)
+        {
+            ignoreObstaclesTimer -= Time.deltaTime;
+
+            if (ignoreObstaclesTimer <= 0f || !isStuck)
+            {
+                StopIgnoringObstacles();
+            }
+        }
+    }
+
+    void StartIgnoringObstacles()
+    {
+        isIgnoringObstacles = true;
+        ignoreObstaclesTimer = igonareObstaclesDuration;
+
+        int obstacleLayer = GetObstacleLayerFromMask(originalObstacleLayerMask);
+        if (obstacleLayer != -1)
+        {
+            Physics.IgnoreLayerCollision(gameObject.layer, obstacleLayer, true);
+        }
+    }
+
+    void StopIgnoringObstacles()
+    {
+        isIgnoringObstacles = false;
+        ignoreObstaclesTimer = 0f;
+
+        int obstacleLayer = GetObstacleLayerFromMask(originalObstacleLayerMask);
+        if (obstacleLayer != -1)
+        {
+            Physics.IgnoreLayerCollision(gameObject.layer, obstacleLayer, false);
+        }
+    }
+
+    int GetObstacleLayerFromMask(LayerMask mask)
+    {
+        int layerIndex = 0;
+        int maskValue = mask.value;
+
+        while (maskValue > 1)
+        {
+            maskValue >>= 1;
+            layerIndex++;
+        }
+        return maskValue == 1 ? layerIndex : -1;
     }
 
     void HandleMovement()
@@ -97,13 +246,14 @@ public class ManualFollow : MonoBehaviour
         }
         else
         {
-            moveDirection.y = -1f; 
+            moveDirection.y = -1f;
         }
 
         Vector3 finalMove = horizontalDirection * currentSpeed + moveDirection.y * Vector3.up;
 
         controller.Move(finalMove * Time.deltaTime);
     }
+
     void HandleAttack()
     {
         float distanceToPlayer = Vector3.Distance(transform.position, player.position);
@@ -113,9 +263,15 @@ public class ManualFollow : MonoBehaviour
             AttackPlayer();
             nextAttackTime = Time.time + 1f / attackRate;
         }
+        else
+        {
+            animator.SetBool("Attack", false);
+        }
     }
+
     void AttackPlayer()
     {
+        animator.SetBool("Attack", true);
         if (playerHealth != null)
         {
             playerHealth.TakeDamage(attackDamage);
@@ -130,62 +286,71 @@ public class ManualFollow : MonoBehaviour
     Vector3 CalculateMovementDirection(Vector3 directionToPlayer)
     {
         Vector3 finalDirection = directionToPlayer;
-
-        if (CheckForObstacle(transform.forward, obstacleCheckDistance))
+        if (!isIgnoringObstacles)
         {
-            Vector3 leftDirection = Quaternion.Euler(0, -45, 0) * directionToPlayer;
-            Vector3 rightDirection = Quaternion.Euler(0, 45, 0) * directionToPlayer;
-
-            bool leftClear = !CheckForObstacle(leftDirection, obstacleCheckDistance);
-            bool rightClear = !CheckForObstacle(rightDirection, obstacleCheckDistance);
-
-            if (leftClear && rightClear)
+            if (CheckForObstacle(transform.forward, obstacleCheckDistance))
             {
-                float leftDot = Vector3.Dot(leftDirection, directionToPlayer);
-                float rightDot = Vector3.Dot(rightDirection, directionToPlayer);
+                Vector3 leftDirection = Quaternion.Euler(0, -45, 0) * directionToPlayer;
+                Vector3 rightDirection = Quaternion.Euler(0, 45, 0) * directionToPlayer;
 
-                finalDirection = leftDot > rightDot ? leftDirection : rightDirection;
-            }
-            else if (leftClear)
-            {
-                finalDirection = leftDirection;
-            }
-            else if (rightClear)
-            {
-                finalDirection = rightDirection;
-            }
-            else
-            {
-                Vector3 sharpLeft = Quaternion.Euler(0, -90, 0) * directionToPlayer;
-                Vector3 sharpRight = Quaternion.Euler(0, 90, 0) * directionToPlayer;
+                bool leftClear = !CheckForObstacle(leftDirection, obstacleCheckDistance);
+                bool rightClear = !CheckForObstacle(rightDirection, obstacleCheckDistance);
 
-                if (!CheckForObstacle(sharpLeft, obstacleCheckDistance))
+                if (leftClear && rightClear)
                 {
-                    finalDirection = sharpLeft;
+                    float leftDot = Vector3.Dot(leftDirection, directionToPlayer);
+                    float rightDot = Vector3.Dot(rightDirection, directionToPlayer);
+
+                    finalDirection = leftDot > rightDot ? leftDirection : rightDirection;
                 }
-                else if (!CheckForObstacle(sharpRight, obstacleCheckDistance))
+                else if (leftClear)
                 {
-                    finalDirection = sharpRight;
+                    finalDirection = leftDirection;
+                }
+                else if (rightClear)
+                {
+                    finalDirection = rightDirection;
                 }
                 else
                 {
-                    finalDirection = -transform.forward * 0.5f;
+                    Vector3 sharpLeft = Quaternion.Euler(0, -90, 0) * directionToPlayer;
+                    Vector3 sharpRight = Quaternion.Euler(0, 90, 0) * directionToPlayer;
+
+                    if (!CheckForObstacle(sharpLeft, obstacleCheckDistance))
+                    {
+                        finalDirection = sharpLeft;
+                    }
+                    else if (!CheckForObstacle(sharpRight, obstacleCheckDistance))
+                    {
+                        finalDirection = sharpRight;
+                    }
+                    else
+                    {
+                        finalDirection = -transform.forward * 0.5f;
+                    }
                 }
             }
-        }
-        Vector3 avoidance = CalculateAvoidanceVector();
-        Vector3 separation = CalculateSeparationVector();
 
-        if (avoidance != Vector3.zero)
-        {
-            finalDirection = (finalDirection + avoidance).normalized;
+            Vector3 avoidance = CalculateAvoidanceVector();
+            if (avoidance != Vector3.zero)
+            {
+                finalDirection = (finalDirection + avoidance).normalized;
+            }
         }
+        else
+        {
+            finalDirection = directionToPlayer;
+        }
+
+        Vector3 separation = CalculateSeparationVector();
         if (separation != Vector3.zero)
         {
             finalDirection = (finalDirection + separation * enemySeparationForce).normalized;
         }
-        return finalDirection.normalized; 
+
+        return finalDirection.normalized;
     }
+
     Vector3 CalculateSeparationVector()
     {
         Vector3 separationVector = Vector3.zero;
@@ -207,15 +372,19 @@ public class ManualFollow : MonoBehaviour
             separationVector /= (nearbyEnemies.Length - 1);
         }
         return separationVector.normalized;
-        //Continue HERE
     }
+
     bool CheckForObstacle(Vector3 direction, float distance)
     {
         Vector3 rayStart = transform.position + Vector3.up * (controller.height / 2);
         return Physics.Raycast(rayStart, direction, distance, obstacleLayerMask);
     }
+
     Vector3 CalculateAvoidanceVector()
     {
+        if (isIgnoringObstacles)
+            return Vector3.zero;
+
         Vector3 avoidance = Vector3.zero;
 
         Vector3 leftDirection = -transform.right;
@@ -238,6 +407,7 @@ public class ManualFollow : MonoBehaviour
         }
         return avoidance;
     }
+
     void OnDrawGizmosSelected()
     {
         if (controller == null) return;
@@ -263,5 +433,17 @@ public class ManualFollow : MonoBehaviour
 
         Gizmos.color = Color.magenta;
         Gizmos.DrawWireSphere(transform.position, attackRange);
+    }
+
+    void OnDestroy()
+    {
+        if (isIgnoringObstacles)
+        {
+            int obstacleLayer = GetObstacleLayerFromMask(originalObstacleLayerMask);
+            if (obstacleLayer != -1)
+            {
+                Physics.IgnoreLayerCollision(gameObject.layer, obstacleLayer, false);
+            }
+        }
     }
 }

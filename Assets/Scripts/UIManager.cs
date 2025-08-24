@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
+using TMPro;
 
 public class UIManager : MonoBehaviour
 {
@@ -10,6 +11,19 @@ public class UIManager : MonoBehaviour
     public Health playerHealth;
     public Slider healthSlider;
     public Slider armorSlider;
+
+    [Header("Text Display")]
+    public TextMeshProUGUI healthText;
+    public TextMeshProUGUI armorText;
+
+    [Header("Weapon Display")]
+    public WeaponSwitching weaponSwitching;
+    public Image gun1Image;
+    public Image gun2Image;
+
+    [Header("Kill Counter")]
+    public int killCount = 0;
+    public TextMeshProUGUI killCountText;
 
     [Header("Screen Effects")]
     public Image darknessUI;
@@ -26,6 +40,7 @@ public class UIManager : MonoBehaviour
 
     private float previousHealth;
     private float previousArmor;
+    private int previousSelectedWeapon = 0;
 
     void Awake()
     {
@@ -71,6 +86,9 @@ public class UIManager : MonoBehaviour
 
     void Update()
     {
+        killCountText.text = killCount.ToString("0");
+        healthText.text = playerHealth.currentHealth.ToString("0");
+        armorText.text = playerHealth.currentArmor.ToString("0");
         if (playerHealth != null && healthSlider != null && armorSlider != null)
         {
             if (playerHealth.currentHealth < previousHealth || playerHealth.currentArmor < previousArmor)
@@ -83,6 +101,34 @@ public class UIManager : MonoBehaviour
 
             previousHealth = playerHealth.currentHealth;
             previousArmor = playerHealth.currentArmor;
+        }
+        if (weaponSwitching != null)
+        {
+            if (previousSelectedWeapon != weaponSwitching.selectedWeapon)
+            {
+                UpdateWeaponDisplay();
+                previousSelectedWeapon = weaponSwitching.selectedWeapon;
+            }
+        }
+    }
+    void UpdateWeaponDisplay()
+    {
+        if (weaponSwitching == null) return;
+
+        if (gun1Image != null) gun1Image.gameObject.SetActive(false);
+        if (gun2Image != null) gun2Image.gameObject.SetActive(false);
+
+        switch (weaponSwitching.selectedWeapon)
+        {
+            case 0:
+                if (gun1Image != null) gun1Image.gameObject.SetActive(true);
+                break;
+            case 1:
+                if (gun2Image != null) gun2Image.gameObject.SetActive(true);
+                break;
+            default:
+                Debug.LogWarning($"Unknown weapon index: {weaponSwitching.selectedWeapon}");
+                break;
         }
     }
 
@@ -190,4 +236,8 @@ public class UIManager : MonoBehaviour
     
     Debug.Log("DamageIndicatorEffect finished");
 }
+
+    public void AddKill(){
+        killCount++;
+    }
 }

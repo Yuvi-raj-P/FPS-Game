@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.UI;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine.Rendering.Universal;
@@ -34,7 +35,6 @@ public class Dreamer : MonoBehaviour
     private Queue<GameObject> dicePool = new Queue<GameObject>();
     private List<GameObject> activeDice = new List<GameObject>();
 
-    //Effects and Cinematic stuff
     public GameObject eyesOpenImage;
     public GameObject eyesClosedImage;
     public GameObject eyesShockedImage;
@@ -54,6 +54,9 @@ public class Dreamer : MonoBehaviour
     public float titleDisplayDuration = 2f;
     public float descriptionDisplayDuration = 3f;
 
+    [Header("Dice Roll Progress")]
+    public Slider diceRollProgressSlider;
+
     [Header("Shaking Effect")]
     public float shakeDuration = 1f;
     public float shakeMagnitude = 10f;
@@ -67,16 +70,22 @@ public class Dreamer : MonoBehaviour
     public float flickerDuration = 1f;
     public float flickerSpeed = 10f;
 
+    [Header("Audio Settings")]
+    public AudioSource backgroundMusic;
+    public float targetPitch = 0.5f;
+    public float pitchTransitionDuration = 2f;
+
     [Header("Smooth Transition Settings")]
     public float fogTransitionDuration = 2f;
     public float shatteredRealityTransitionDuration = 1.5f;
+    public float cerebralPainTransitionDuration = 2f;
     public AnimationCurve transitionCurve = AnimationCurve.EaseInOut(0, 0, 1f, 1f);
 
-    //Transition Coroutines
     private Coroutine fogTransitionCoroutine;
     private Coroutine shatteredRealityTransitionCoroutine;
+    private Coroutine cerebralPainTransitionCoroutine;
+    private Coroutine pitchTransitionCoroutine;
 
-    // Abilities
     private float originalFogDensity = 0.01f;
     private bool fogSettingsStored = false;
     private List<DreamAbility> availableAbilities;
@@ -89,15 +98,52 @@ public class Dreamer : MonoBehaviour
     private Coroutine currentShake;
     private ColorAdjustments colorAdjustments;
     private LensDistortion lensDistortion;
+    private Vignette vignette;
+    private ChannelMixer channelMixer;
+    private DepthOfField depthOfField;
+    public float originalMotionBlur = 0.70f;
     private MotionBlur motionBlur;
+    private float originalPitch;
 
+    private float originalVignetteIntensity;
+    private float originalChannelMixerRed;
+    private float originalChannelMixerGreen;
+    private float originalChannelMixerBlue;
+    private float originalDepthOfFieldRadius;
+    private bool originalDepthOfFieldActive;
+    private ChromaticAberration chromaticAberration;
+    private bool originalVignetteActive;
+    private bool originalChannelMixerActive;
+    private float originalChromaticAberrationIntensity;
+    private bool originalChromaticAberrationActive;
 
+    [Header("Dyslexic Dreamer Settings")]
+    public PlayerMotor playerMotor;
+    public float neuralTwistTransitionDuration = 1f;
+
+    [Header("Imagination Settings")]
+    public float imaginationTransitionDuration = 2f;
+
+    private float currentDiceRollDelay;
+    private float diceRollTimer;
+    private bool isDiceRollActive = false;
+
+    [Header("Testing System")]
+    public bool enableTestingmode = false;
+    public AbilityType forcedAbilityType = AbilityType.Starlift;
+
+    public bool overrideAbilityDuration = false;
+    public float testAbilityDuration = 5f;
 
     public enum AbilityType
     {
         FogOfThoughts,
-        ShatteredReality
+        ShatteredReality,
+        CerebralPain,
+        NeuralTwist,
+        Starlift
     }
+
     [System.Serializable]
     public class DreamAbility
     {
@@ -119,6 +165,21 @@ public class Dreamer : MonoBehaviour
     {
         InitializeAbilities();
 
+        if (playerMotor == null)
+        {
+            playerMotor = FindObjectOfType<PlayerMotor>();
+            if (playerMotor == null)
+            {
+                Debug.LogWarning("PlayerMotor NOT FOUND FIX THIS IMMEDIATLY BISH");
+            }
+        }
+
+        if (backgroundMusic != null)
+        {
+            originalPitch = backgroundMusic.pitch;
+        }
+
+
         if (globalVolume != null && globalVolume.profile.TryGet<ColorAdjustments>(out colorAdjustments))
         {
             colorAdjustments.saturation.value = 0f;
@@ -137,12 +198,54 @@ public class Dreamer : MonoBehaviour
         }
         if (globalVolume != null && globalVolume.profile.TryGet<MotionBlur>(out motionBlur))
         {
-            motionBlur.intensity.value = 0f;
+            motionBlur.intensity.value = originalFogDensity;
         }
         else
         {
             Debug.LogWarning("Motion Blur not found");
         }
+
+        if (globalVolume != null && globalVolume.profile.TryGet<Vignette>(out vignette))
+        {
+            originalVignetteIntensity = vignette.intensity.value;
+            originalVignetteActive = vignette.active;
+        }
+        else
+        {
+            Debug.LogWarning("Vignette not found");
+        }
+
+        if (globalVolume != null && globalVolume.profile.TryGet<ChannelMixer>(out channelMixer))
+        {
+            originalChannelMixerRed = channelMixer.redOutRedIn.value;
+            originalChannelMixerGreen = channelMixer.greenOutGreenIn.value;
+            originalChannelMixerBlue = channelMixer.blueOutBlueIn.value;
+            originalChannelMixerActive = channelMixer.active;
+        }
+        else
+        {
+            Debug.LogWarning("Channel Mixer not found");
+        }
+
+        if (globalVolume != null && globalVolume.profile.TryGet<DepthOfField>(out depthOfField))
+        {
+            originalDepthOfFieldRadius = depthOfField.gaussianMaxRadius.value;
+            originalDepthOfFieldActive = depthOfField.active;
+        }
+        else
+        {
+            Debug.LogWarning("Depth of Field not found");
+        }
+        if (globalVolume != null && globalVolume.profile.TryGet<ChromaticAberration>(out chromaticAberration))
+        {
+            originalChromaticAberrationIntensity = chromaticAberration.intensity.value;
+            originalChromaticAberrationActive = chromaticAberration.active;
+        }
+        else
+        {
+            Debug.LogWarning("Chromatic Aberration not found");
+        }
+
         if (abilityUIPanel != null)
         {
             abilityUIPanel.SetActive(false);
@@ -155,7 +258,6 @@ public class Dreamer : MonoBehaviour
         {
             eyesClosedImage.SetActive(false);
             eyesClosedOriginalPos = eyesClosedImage.transform.localPosition;
-
         }
         if (eyesShockedImage != null)
         {
@@ -169,10 +271,73 @@ public class Dreamer : MonoBehaviour
         {
             InitializeDicePool();
         }
+        if (diceRollProgressSlider != null)
+        {
+            diceRollProgressSlider.minValue = 0f;
+            diceRollProgressSlider.maxValue = 1f;
+            diceRollProgressSlider.value = 0f;
+        }
+
+        motionBlur.intensity.value = originalMotionBlur;
         StartCoroutine(CloseEyesSequence());
         StartCoroutine(StartRollingDice());
         StartCoroutine(RandomShaking());
+        if (enableTestingmode)
+        {
+            HandleTestingInput();
+        }
     }
+    void HandleTestingInput()
+    {
+        if (Input.GetKeyDown(KeyCode.Alpha1))
+        {
+            forcedAbilityType = AbilityType.FogOfThoughts;
+        }
+        if (Input.GetKeyDown(KeyCode.Alpha2))
+        {
+            forcedAbilityType = AbilityType.ShatteredReality;
+        }
+        if (Input.GetKeyDown(KeyCode.Alpha3))
+        {
+            forcedAbilityType = AbilityType.CerebralPain;
+        }
+        if (Input.GetKeyDown(KeyCode.Alpha4))
+        {
+            forcedAbilityType = AbilityType.NeuralTwist;
+        }
+        if (Input.GetKeyDown(KeyCode.Alpha5))
+        {
+            forcedAbilityType = AbilityType.Starlift;
+        }
+
+        if (Input.GetKeyDown(KeyCode.T) && !abilityActive && !isDiceRollActive)
+        {
+            StartCoroutine(ForceDiceRoll());
+        }
+    }
+    IEnumerator ForceDiceRoll()
+    {
+        if (eyesClosedImage.activeSelf && currentShake == null)
+        {
+            currentShake = StartCoroutine(ShakeRoutine(shakeDuration));
+            yield return currentShake;
+        }
+        RollDice();
+    }
+
+    void Update()
+    {
+        if (diceRollProgressSlider != null && isDiceRollActive && !abilityActive)
+        {
+            float progress = diceRollTimer / currentDiceRollDelay;
+            diceRollProgressSlider.value = progress;
+        }
+        else if (diceRollProgressSlider != null && abilityActive)
+        {
+            diceRollProgressSlider.value = 0f;
+        }
+    }
+
     void InitializeDicePool()
     {
         for (int i = 0; i < maxPoolSize; i++)
@@ -190,14 +355,19 @@ public class Dreamer : MonoBehaviour
         }
         Debug.Log($"Dice pool initialized with {maxPoolSize} dice.");
     }
+
     void InitializeAbilities()
     {
         availableAbilities = new List<DreamAbility>
         {
             new DreamAbility(AbilityType.FogOfThoughts, "Fog of Thoughts", "Increased fog density, reduced visibility", 20f),
-            new DreamAbility(AbilityType.ShatteredReality, "Shattered Reality", "Distorted reality, increased chaos", 20f)
+            new DreamAbility(AbilityType.ShatteredReality, "Shattered Reality", "Distorted reality, increased chaos", 20f),
+            new DreamAbility(AbilityType.CerebralPain, "Cerebral Pain", "Intense mental strain, reduced focus", 20f),
+            new DreamAbility(AbilityType.NeuralTwist, "Neural Twist", "Twisted perception, unpredictable effects", 20f),
+            new DreamAbility(AbilityType.Starlift, "Starlift", "Mind soars free, truly a transcending experience", 20f)
         };
     }
+
     IEnumerator CloseEyesSequence()
     {
         yield return new WaitForSeconds(4f);
@@ -209,7 +379,6 @@ public class Dreamer : MonoBehaviour
         {
             eyesClosedImage.SetActive(true);
         }
-
     }
 
     IEnumerator StartRollingDice()
@@ -218,20 +387,31 @@ public class Dreamer : MonoBehaviour
         {
             while (abilityActive)
             {
+                isDiceRollActive = false;
                 yield return new WaitForSeconds(1f);
             }
-            float randomDelay = Random.Range(minDiceRollTime, maxDiceRollTime);
-            yield return new WaitForSeconds(randomDelay);
+
+            currentDiceRollDelay = Random.Range(minDiceRollTime, maxDiceRollTime);
+            diceRollTimer = 0f;
+
+            isDiceRollActive = true;
+            while (diceRollTimer < currentDiceRollDelay)
+            {
+                diceRollTimer += Time.deltaTime;
+                yield return null;
+            }
+
+            isDiceRollActive = false;
 
             if (eyesClosedImage.activeSelf && currentShake == null)
             {
                 currentShake = StartCoroutine(ShakeRoutine(shakeDuration));
                 yield return currentShake;
-
             }
             RollDice();
         }
     }
+
     void RollDice()
     {
         if (dicePrefab == null || spawnPoint == null)
@@ -241,6 +421,7 @@ public class Dreamer : MonoBehaviour
         }
         StartCoroutine(FlickerEffectSequence());
     }
+
     IEnumerator FlickerEffectSequence()
     {
         StartCoroutine(FlickerEffect());
@@ -279,6 +460,539 @@ public class Dreamer : MonoBehaviour
             StartCoroutine(QueueAbility());
         }
     }
+
+    IEnumerator QueueAbility()
+    {
+        if (availableAbilities.Count == 0)
+        {
+            yield break;
+        }
+
+        StartCoroutine(TransitionMusicPitch(targetPitch));
+
+        abilityQueued = true;
+
+        if (enableTestingmode)
+        {
+            currentAbility = GetAbilityByType(forcedAbilityType);
+            if (currentAbility == null)
+            {
+                currentAbility = availableAbilities[0];
+            }
+        }
+        else{
+            currentAbility = availableAbilities[Random.Range(0, availableAbilities.Count)];
+        }
+
+        //currentAbility = availableAbilities[Random.Range(0, availableAbilities.Count)];
+
+        yield return new WaitForSeconds(abilityRevealDelay);
+
+        StartCoroutine(ShowAbilityUI());
+
+        yield return new WaitForSeconds(1f);
+
+        StartCoroutine(ActiveQueuedAbility());
+    }
+
+    IEnumerator ActiveQueuedAbility()
+    {
+        abilityQueued = false;
+        abilityActive = true;
+
+        float abilityDuration;
+        if (enableTestingmode && overrideAbilityDuration)
+        {
+            abilityDuration = testAbilityDuration;
+        }
+        else
+        {
+            abilityDuration = Random.Range(minAbilityDuration, maxAbilityDuration);
+        }
+        ApplyAbilityEffect(currentAbility, true);
+        yield return new WaitForSeconds(abilityDuration);
+
+        ApplyAbilityEffect(currentAbility, false);
+        StartCoroutine(TransitionMusicPitch(originalPitch));
+
+        abilityActive = false;
+        currentAbility = null;
+
+    }
+    DreamAbility GetAbilityByType(AbilityType abilityType)
+    {
+        foreach (var ability in availableAbilities)
+        {
+            if (ability.abilityType == abilityType)
+            {
+                return ability;
+            }
+        }
+        return null;
+    }
+
+    IEnumerator TransitionMusicPitch(float targetPitchValue)
+    {
+        if (backgroundMusic == null)
+        {
+            yield break;
+        }
+
+        if (pitchTransitionCoroutine != null)
+        {
+            StopCoroutine(pitchTransitionCoroutine);
+        }
+
+        float startPitch = backgroundMusic.pitch;
+        float elapsed = 0f;
+
+        while (elapsed < pitchTransitionDuration)
+        {
+            elapsed += Time.deltaTime;
+            float progress = elapsed / pitchTransitionDuration;
+
+            float curveValue = transitionCurve.Evaluate(progress);
+            backgroundMusic.pitch = Mathf.Lerp(startPitch, targetPitchValue, curveValue);
+
+            yield return null;
+        }
+
+        backgroundMusic.pitch = targetPitchValue;
+        pitchTransitionCoroutine = null;
+    }
+
+    IEnumerator ShowAbilityUI()
+    {
+        if (abilityUIPanel != null)
+        {
+            abilityUIPanel.SetActive(true);
+        }
+        if (abilityTitleText != null)
+        {
+            abilityTitleText.text = "<-fade><+fade><sketchy>" + currentAbility.name + "</+fade><!wait=2></->";
+            abilityTitleText.gameObject.SetActive(true);
+        }
+        if (abilityDescriptionText != null)
+        {
+            abilityDescriptionText.gameObject.SetActive(false);
+        }
+        yield return new WaitForSeconds(titleDisplayDuration);
+        if (abilityDescriptionText != null)
+        {
+            abilityDescriptionText.text = "<sketchy>" + currentAbility.description;
+            abilityDescriptionText.gameObject.SetActive(true);
+        }
+        yield return new WaitForSeconds(descriptionDisplayDuration);
+
+        if (abilityUIPanel != null)
+        {
+            abilityUIPanel.SetActive(false);
+        }
+    }
+
+    void ApplyAbilityEffect(DreamAbility ability, bool activate)
+    {
+        switch (ability.abilityType)
+        {
+            case AbilityType.FogOfThoughts:
+                ApplyFogOfThoughts(activate);
+                break;
+            case AbilityType.ShatteredReality:
+                ApplyShatteredReality(activate);
+                break;
+            case AbilityType.CerebralPain:
+                ApplyCerebralPain(activate);
+                break;
+            case AbilityType.NeuralTwist:
+                ApplyNeuralTwist(activate);
+                break;
+            case AbilityType.Starlift:
+                ApplyStarlift(activate);
+                break;
+        }
+    }
+    void ApplyStarlift(bool activate)
+    {
+        if (playerMotor == null)
+        {
+            Debug.LogError("PLAYER MOTOR IS NULLLLL");
+            return;
+        }
+        if (activate)
+        {
+            StartCoroutine(SmoothStarlift(true));
+        }
+        else
+        {
+            StartCoroutine(SmoothStarlift(false));
+        }
+    }
+    IEnumerator SmoothStarlift(bool activate)
+    {
+        if (playerMotor == null) yield break;
+        bool currentFlyingState = playerMotor.GetFlying();
+        bool targetFlyingState = activate;
+
+        if (currentFlyingState == targetFlyingState)
+        {
+            yield break;
+        }
+        /*if (activate)
+        {
+            StartCoroutine(StartliftVisualEffects());
+        }*/
+
+        yield return new WaitForSeconds(imaginationTransitionDuration * 0.4f);
+        playerMotor.SetFlying(targetFlyingState);
+
+        yield return new WaitForSeconds(imaginationTransitionDuration * 0.6f);
+    }
+    IEnumerator ImaginationVisualEffects()
+    {
+        float effectDuration = imaginationTransitionDuration;
+        float elapsed = 0f;
+
+        float originalHue = colorAdjustments?.hueShift.value ?? 0f;
+        float originalSaturation = colorAdjustments?.saturation.value ?? 0f;
+        float originalContrast = colorAdjustments?.contrast.value ?? 0f;
+        float originalLensIntensity = lensDistortion?.intensity.value ?? 0f;
+
+        while (elapsed < effectDuration)
+        {
+            elapsed += Time.deltaTime;
+            float progress = elapsed / effectDuration;
+            if (colorAdjustments != null)
+            {
+                float hueShift = Mathf.Sin(progress * Mathf.PI * 2f) * 30f;
+                colorAdjustments.hueShift.value = originalHue + hueShift;
+
+                float saturationBoost = Mathf.Sin(progress * Mathf.PI) * 20f;
+                colorAdjustments.saturation.value = originalSaturation + saturationBoost;
+
+                float contrastWave = Mathf.Sin(progress * Mathf.PI * 3f) * 10f;
+                colorAdjustments.contrast.value = originalContrast + contrastWave;
+            }
+            if (lensDistortion != null)
+            {
+                float distortionWave = Mathf.Sin(progress * Mathf.PI) * 0.1f;
+                lensDistortion.intensity.value = originalLensIntensity + distortionWave;
+            }
+            yield return null;
+        }
+        if (colorAdjustments != null)
+        {
+            colorAdjustments.hueShift.value = originalHue;
+            colorAdjustments.saturation.value = originalSaturation;
+            colorAdjustments.contrast.value = originalContrast;
+        }
+        if (lensDistortion != null)
+        {
+            lensDistortion.intensity.value = originalLensIntensity;
+        }
+        if (currentShake == null && eyesClosedImage != null && eyesClosedImage.activeSelf)
+        {
+            currentShake = StartCoroutine(ShakeRoutine(imaginationTransitionDuration * 0.3f));
+        }
+    }
+    void ApplyNeuralTwist(bool activate)
+    {
+        if (playerMotor == null)
+        {
+            Debug.LogError("PLAYER MOTOR IS NULLLLL");
+            return;
+        }
+        if (activate)
+        {
+            StartCoroutine(SmoothNeuralTwistTransition(true));
+
+        }
+        else
+        {
+            StartCoroutine(SmoothNeuralTwistTransition(false));
+        }
+    }
+
+    void ApplyFogOfThoughts(bool activate)
+    {
+        if (activate)
+        {
+            if (!fogSettingsStored)
+            {
+                originalFogDensity = RenderSettings.fogDensity;
+                fogSettingsStored = true;
+            }
+
+            RenderSettings.fog = true;
+            RenderSettings.fogMode = FogMode.ExponentialSquared;
+            if (fogTransitionCoroutine != null)
+            {
+                StopCoroutine(fogTransitionCoroutine);
+            }
+            fogTransitionCoroutine = StartCoroutine(SmoothValueTransition(
+                startValue: originalFogDensity,
+                targetValue: 0.2f,
+                duration: fogTransitionDuration,
+                onUpdate: (value) => RenderSettings.fogDensity = value,
+                onComplete: () =>
+                {
+                    fogTransitionCoroutine = null;
+                    Debug.Log("Fog of Thoughts");
+                }
+            ));
+            Debug.Log($"Fog of Thoughts activated.");
+        }
+        else
+        {
+            if (fogTransitionCoroutine != null)
+            {
+                StopCoroutine(fogTransitionCoroutine);
+            }
+
+            if (fogSettingsStored)
+            {
+                fogTransitionCoroutine = StartCoroutine(SmoothValueTransition(
+                    startValue: RenderSettings.fogDensity,
+                    targetValue: originalFogDensity,
+                    duration: fogTransitionDuration,
+                    onUpdate: (value) => RenderSettings.fogDensity = value,
+                    onComplete: () =>
+                    {
+                        fogTransitionCoroutine = null;
+                        Debug.Log("Fog of Thoughts ended");
+                    }
+                ));
+            }
+        }
+    }
+
+    void ApplyShatteredReality(bool activate)
+    {
+        if (activate)
+        {
+            if (lensDistortion != null)
+            {
+                if (shatteredRealityCoroutine != null)
+                {
+                    StopCoroutine(shatteredRealityTransitionCoroutine);
+                }
+                shatteredRealityTransitionCoroutine = StartCoroutine(SmoothShatteredRealityTransition(true));
+            }
+            Debug.Log("Shattered Reality acitivated! Reality");
+        }
+        else
+        {
+            if (shatteredRealityTransitionCoroutine != null)
+            {
+                StopCoroutine(shatteredRealityTransitionCoroutine);
+            }
+            if (lensDistortion != null)
+            {
+                shatteredRealityTransitionCoroutine = StartCoroutine(SmoothShatteredRealityTransition(false));
+            }
+            if (motionBlur != null)
+            {
+                motionBlur.intensity.value = originalMotionBlur;
+            }
+            Debug.Log("Shattered Reality ended");
+        }
+    }
+
+    void ApplyCerebralPain(bool activate)
+    {
+        if (activate)
+        {
+            if (cerebralPainTransitionCoroutine != null)
+            {
+                StopCoroutine(cerebralPainTransitionCoroutine);
+            }
+            cerebralPainTransitionCoroutine = StartCoroutine(SmoothCerebralPainTransition(true));
+            Debug.Log("Cerebral Pain activated");
+        }
+        else
+        {
+            if (cerebralPainTransitionCoroutine != null)
+            {
+                StopCoroutine(cerebralPainTransitionCoroutine);
+            }
+            cerebralPainTransitionCoroutine = StartCoroutine(SmoothCerebralPainTransition(false));
+            Debug.Log("Cerebral Pain ended");
+        }
+    }
+    IEnumerator SmoothNeuralTwistTransition(bool activate)
+    {
+        if (playerMotor == null) yield break;
+
+        bool currentInvertedState = playerMotor.GetInvertedControls();
+        bool targetInvertedState = activate;
+
+        if (currentInvertedState == targetInvertedState)
+        {
+            yield break;
+        }
+        if (activate)
+        {
+            StartCoroutine(NeuralVisualEffect());
+        }
+
+        yield return new WaitForSeconds(neuralTwistTransitionDuration * 0.3f);
+        playerMotor.SetInvertedControls(targetInvertedState);
+
+        yield return new WaitForSeconds(neuralTwistTransitionDuration * 0.7f);
+    }
+    IEnumerator NeuralVisualEffect()
+    {
+        if (colorAdjustments != null)
+        {
+            float originalHue = colorAdjustments.hueShift.value;
+            float originalSaturation = colorAdjustments.saturation.value;
+            float originalContrast = colorAdjustments.contrast.value;
+            float elapsed = 0f;
+            float effectDuration = neuralTwistTransitionDuration;
+
+            while (elapsed < effectDuration)
+            {
+                elapsed += Time.deltaTime;
+                float progress = elapsed / effectDuration;
+
+                float hueShift = Mathf.Sin(progress * Mathf.PI * 12f) * 360f;
+                colorAdjustments.hueShift.value = hueShift;
+
+                float saturationPulse = Mathf.Sin(progress * Mathf.PI * 8f) * 100f;
+                colorAdjustments.saturation.value = saturationPulse;
+
+                float contrastFlash = Mathf.Sin(progress * Mathf.PI * 16f) > 0.5f ? 50f : -20f;
+                colorAdjustments.contrast.value = contrastFlash;
+
+                yield return null;
+            }
+
+            colorAdjustments.hueShift.value = originalHue;
+            colorAdjustments.saturation.value = originalSaturation;
+            colorAdjustments.contrast.value = originalContrast;
+        }
+        if (currentShake == null && eyesClosedImage != null && eyesClosedImage.activeSelf)
+        {
+            currentShake = StartCoroutine(ShakeRoutine(neuralTwistTransitionDuration * 0.8f));
+        }
+
+        if (lensDistortion != null)
+        {
+            StartCoroutine(NeuralDistortionEffect());
+        }
+    }
+    IEnumerator NeuralDistortionEffect()
+    {
+        float originalIntensity = lensDistortion.intensity.value;
+        float elapsed = 0f;
+        float pulseDuration = neuralTwistTransitionDuration * 0.6f;
+        while (elapsed < pulseDuration)
+        {
+            elapsed += Time.deltaTime;
+            float progress = elapsed / pulseDuration;
+
+            float distorationPulse = Mathf.Sin(progress * Mathf.PI * 3f) * 0.5f;
+            lensDistortion.intensity.value = originalIntensity + distorationPulse;
+
+            yield return null;
+
+        }
+        lensDistortion.intensity.value = originalIntensity;
+
+    }
+
+
+    IEnumerator SmoothCerebralPainTransition(bool activate)
+    {
+        float targetVignetteIntensity = activate ? 0.4f : originalVignetteIntensity;
+        float targetChannelMixerRed = activate ? 200f : originalChannelMixerRed;
+        float targetChannelMixerGreen = activate ? -121f : originalChannelMixerGreen;
+        float targetChannelMixerBlue = activate ? -200f : originalChannelMixerBlue;
+        float targetDepthOfFieldRadius = activate ? 1.5f : originalDepthOfFieldRadius;
+        float targetChromaticAberrationIntensity = activate ? 0.5f : originalChromaticAberrationIntensity;
+
+        float startVignetteIntensity = vignette != null ? vignette.intensity.value : 0f;
+        float startChannelMixerRed = channelMixer != null ? channelMixer.redOutRedIn.value : 100f;
+        float startChannelMixerGreen = channelMixer != null ? channelMixer.greenOutGreenIn.value : 100f;
+        float startChannelMixerBlue = channelMixer != null ? channelMixer.blueOutBlueIn.value : 100f;
+        float startDepthOfFieldRadius = depthOfField != null ? depthOfField.gaussianMaxRadius.value : 1f;
+        float startChromaticAberrationIntensity = chromaticAberration != null ? chromaticAberration.intensity.value : 0f;
+
+        if (activate)
+        {
+            if (vignette != null) vignette.active = true;
+            if (channelMixer != null) channelMixer.active = true;
+            if (depthOfField != null) depthOfField.active = true;
+            if (chromaticAberration != null) chromaticAberration.active = true;
+        }
+
+        float elapsed = 0f;
+        while (elapsed < cerebralPainTransitionDuration)
+        {
+            elapsed += Time.deltaTime;
+            float progress = elapsed / cerebralPainTransitionDuration;
+            float curveValue = transitionCurve.Evaluate(progress);
+
+            if (vignette != null)
+            {
+                vignette.intensity.value = Mathf.Lerp(startVignetteIntensity, targetVignetteIntensity, curveValue);
+            }
+
+            if (channelMixer != null)
+            {
+                channelMixer.redOutRedIn.value = Mathf.Lerp(startChannelMixerRed, targetChannelMixerRed, curveValue);
+                channelMixer.greenOutGreenIn.value = Mathf.Lerp(startChannelMixerGreen, targetChannelMixerGreen, curveValue);
+                channelMixer.blueOutBlueIn.value = Mathf.Lerp(startChannelMixerBlue, targetChannelMixerBlue, curveValue);
+            }
+
+            if (depthOfField != null)
+            {
+                depthOfField.gaussianMaxRadius.value = Mathf.Lerp(startDepthOfFieldRadius, targetDepthOfFieldRadius, curveValue);
+            }
+
+            if (chromaticAberration != null)
+            {
+                chromaticAberration.intensity.value = Mathf.Lerp(startChromaticAberrationIntensity, targetChromaticAberrationIntensity, curveValue);
+            }
+
+            yield return null;
+        }
+
+        if (vignette != null)
+        {
+            vignette.intensity.value = targetVignetteIntensity;
+        }
+
+        if (channelMixer != null)
+        {
+            channelMixer.redOutRedIn.value = targetChannelMixerRed;
+            channelMixer.greenOutGreenIn.value = targetChannelMixerGreen;
+            channelMixer.blueOutBlueIn.value = targetChannelMixerBlue;
+        }
+
+        if (depthOfField != null)
+        {
+            depthOfField.gaussianMaxRadius.value = targetDepthOfFieldRadius;
+        }
+
+        if (chromaticAberration != null)
+        {
+            chromaticAberration.intensity.value = targetChromaticAberrationIntensity;
+        }
+
+        if (!activate)
+        {
+            if (vignette != null) vignette.active = originalVignetteActive;
+            if (channelMixer != null) channelMixer.active = originalChannelMixerActive;
+            if (depthOfField != null) depthOfField.active = originalDepthOfFieldActive;
+            if (chromaticAberration != null) chromaticAberration.active = originalChromaticAberrationActive;
+        }
+
+        string direction = activate ? "intensified" : "relieved";
+        Debug.Log($"Cerebral Pain transition complete - mental strain {direction}");
+
+        cerebralPainTransitionCoroutine = null;
+    }
+
     IEnumerator SpawnCrazyDice(int diceCount)
     {
         int diceBatchSize = 20;
@@ -303,8 +1017,8 @@ public class Dreamer : MonoBehaviour
 
             yield return new WaitForSeconds(0.1f);
         }
-
     }
+
     void SpawnPooledDie(int index)
     {
         if (dicePool.Count == 0)
@@ -338,6 +1052,7 @@ public class Dreamer : MonoBehaviour
 
         StartCoroutine(ReturnDiceToPool(die, diceDestroyDelay));
     }
+
     void SpawnCrazySingleDie(int index)
     {
         Vector3 spawnPosition = GetCrazyDiceSpawnPosition();
@@ -359,6 +1074,7 @@ public class Dreamer : MonoBehaviour
 
         Destroy(die, diceDestroyDelay);
     }
+
     Vector3 GetCrazyDiceSpawnPosition()
     {
         Vector3 randomOffset = Random.insideUnitSphere * crazySpawnRadius;
@@ -366,6 +1082,7 @@ public class Dreamer : MonoBehaviour
 
         return spawnPoint.position + randomOffset;
     }
+
     Vector3 GetCrazyThrowDirection(Vector3 spawnPosition)
     {
         Vector3 baseDirection = (spawnPoint.forward + Vector3.up * 0.5f).normalized;
@@ -376,6 +1093,7 @@ public class Dreamer : MonoBehaviour
 
         return (baseDirection + randomVariation).normalized;
     }
+
     IEnumerator ReturnDiceToPool(GameObject die, float delay)
     {
         yield return new WaitForSeconds(delay);
@@ -393,6 +1111,7 @@ public class Dreamer : MonoBehaviour
             dicePool.Enqueue(die);
         }
     }
+
     void SpawnSingleDie(int index)
     {
         Vector3 spawnPosition;
@@ -446,185 +1165,6 @@ public class Dreamer : MonoBehaviour
             Debug.Log("Dice rolled: " + diceResult);
         }
     }
-    IEnumerator QueueAbility()
-    {
-        if (availableAbilities.Count == 0)
-        {
-            yield break;
-        }
-        abilityQueued = true;
-        currentAbility = availableAbilities[Random.Range(0, availableAbilities.Count)];
-
-        yield return new WaitForSeconds(abilityRevealDelay);
-
-        StartCoroutine(ShowAbilityUI());
-
-        yield return new WaitForSeconds(1f);
-
-        StartCoroutine(ActiveQueuedAbility());
-    }
-    IEnumerator ShowAbilityUI()
-    {
-        if (abilityUIPanel != null)
-        {
-            abilityUIPanel.SetActive(true);
-        }
-        if (abilityTitleText != null)
-        {
-            abilityTitleText.text = "<-fade><+fade><sketchy>" + currentAbility.name + "</+fade><!wait=2></->";
-            abilityTitleText.gameObject.SetActive(true);
-        }
-        if (abilityDescriptionText != null)
-        {
-            abilityDescriptionText.gameObject.SetActive(false);
-        }
-        yield return new WaitForSeconds(titleDisplayDuration);
-        if (abilityDescriptionText != null)
-        {
-            abilityDescriptionText.text = "<sketchy>" + currentAbility.description;
-            abilityDescriptionText.gameObject.SetActive(true);
-        }
-        yield return new WaitForSeconds(descriptionDisplayDuration);
-
-        if (abilityUIPanel != null)
-        {
-            abilityUIPanel.SetActive(false);
-        }
-    }
-    IEnumerator ActiveQueuedAbility()
-    {
-        abilityQueued = false;
-        abilityActive = true;
-
-        float abilityDuration = Random.Range(minAbilityDuration, maxAbilityDuration);
-        Debug.Log($"Ability Activated: {currentAbility.name} for {abilityDuration:F1} seconds");
-
-        ApplyAbilityEffect(currentAbility, true);
-        yield return new WaitForSeconds(abilityDuration);
-
-        ApplyAbilityEffect(currentAbility, false);
-
-        Debug.Log($"Ability Expired: {currentAbility.name}");
-
-        abilityActive = false;
-        currentAbility = null;
-    }
-
-    /*IEnumerator ActivateRandomAbility()
-    {
-        if (availableAbilities.Count == 0) yield break;
-        currentAbility = availableAbilities[Random.Range(0, availableAbilities.Count)];
-        float abilityDuration = Random.Range(minAbilityDuration, maxAbilityDuration);
-
-        abilityActive = true;
-        Debug.Log($"Ability Activated: {currentAbility.name} for {abilityDuration}");
-
-        ApplyAbilityEffect(currentAbility, true);
-
-        yield return new WaitForSeconds(abilityDuration);
-
-        ApplyAbilityEffect(currentAbility, false);
-
-        Debug.Log($"Ability Ended: {currentAbility.name}");
-
-        abilityActive = false;
-        currentAbility = null;
-    }*/
-    void ApplyAbilityEffect(DreamAbility ability, bool activate)
-    {
-        switch (ability.abilityType)
-        {
-            case AbilityType.FogOfThoughts:
-                ApplyFogOfThoughts(activate);
-                break;
-            case AbilityType.ShatteredReality:
-                ApplyShatteredReality(activate);
-                break;
-        }
-    }
-    void ApplyFogOfThoughts(bool activate)
-    {
-        if (activate)
-        {
-            if (!fogSettingsStored)
-            {
-                originalFogDensity = RenderSettings.fogDensity;
-                fogSettingsStored = true;
-            }
-
-            RenderSettings.fog = true;
-            RenderSettings.fogMode = FogMode.ExponentialSquared;
-            if (fogTransitionCoroutine != null)
-            {
-                StopCoroutine(fogTransitionCoroutine);
-            }
-            fogTransitionCoroutine = StartCoroutine(SmoothValueTransition(
-                startValue: originalFogDensity,
-                targetValue: 0.2f,
-                duration: fogTransitionDuration,
-                onUpdate: (value) => RenderSettings.fogDensity = value,
-                onComplete: () =>
-                {
-                    fogTransitionCoroutine = null;
-                    Debug.Log("Fog of Thoughts");
-                }
-            ));
-            Debug.Log($"Fog of Thoughts activated.");
-        }
-        else
-        {
-            if (fogTransitionCoroutine != null)
-            {
-                StopCoroutine(fogTransitionCoroutine);
-            }
-
-            if (fogSettingsStored)
-            {
-                fogTransitionCoroutine = StartCoroutine(SmoothValueTransition(
-                    startValue: RenderSettings.fogDensity,
-                    targetValue: originalFogDensity,
-                    duration: fogTransitionDuration,
-                    onUpdate: (value) => RenderSettings.fogDensity = value,
-                    onComplete: () =>
-                    {
-                        fogTransitionCoroutine = null;
-                        Debug.Log("Fog of Thoughts ended");
-                    }
-                ));
-            }
-        }
-    }
-    void ApplyShatteredReality(bool activate)
-    {
-        if (activate)
-        {
-            if (lensDistortion != null)
-            {
-                if (shatteredRealityCoroutine != null)
-                {
-                    StopCoroutine(shatteredRealityTransitionCoroutine);
-                }
-                shatteredRealityTransitionCoroutine = StartCoroutine(SmoothShatteredRealityTransition(true));
-            }
-            Debug.Log("Shattered Reality acitivated! Reality");
-        }
-        else
-        {
-            if (shatteredRealityTransitionCoroutine != null)
-            {
-                StopCoroutine(shatteredRealityTransitionCoroutine);
-            }
-            if (lensDistortion != null)
-            {
-                shatteredRealityTransitionCoroutine = StartCoroutine(SmoothShatteredRealityTransition(false));
-            }
-            if (motionBlur != null)
-            {
-                motionBlur.intensity.value = 0f;
-            }
-            Debug.Log("Shattered Reality ended");
-        }
-    }
 
     void OnDestroy()
     {
@@ -644,40 +1184,7 @@ public class Dreamer : MonoBehaviour
             }
         }
     }
-    /*IEnumerator ShatteredRealityEffect()
-    {
-        float duration = Random.Range(minAbilityDuration, maxAbilityDuration);
-        float elapsed = 0f;
 
-        while (elapsed < duration && abilityActive)
-        {
-            if (lensDistortion != null)
-            {
-
-                lensDistortion.intensity.value = 0.76f;
-                lensDistortion.xMultiplier.value = 0.742f;
-                lensDistortion.yMultiplier.value = 1;
-                lensDistortion.center.value = new Vector2(0.57f, 0.47f);
-                lensDistortion.scale.value = 0.97f;
-            }
-            if (motionBlur != null)
-            {
-                motionBlur.intensity.value = 0.053f;
-            }
-            elapsed += Time.deltaTime;
-            yield return null;
-        }
-
-        if (lensDistortion != null)
-        {
-            lensDistortion.intensity.value = 0f;
-        }
-        if (motionBlur != null)
-        {
-            motionBlur.intensity.value = 0f;
-        }
-        shatteredRealityCoroutine = null;
-    }*/
     IEnumerator FlickerEffect()
     {
         if (colorAdjustments == null) yield break;
@@ -704,6 +1211,7 @@ public class Dreamer : MonoBehaviour
         Time.timeScale = 1f;
         Time.fixedDeltaTime = 0.02f;
     }
+
     IEnumerator ShowEyesShocked()
     {
         if (currentShake != null)
@@ -732,6 +1240,7 @@ public class Dreamer : MonoBehaviour
         }
         StartCoroutine(HandleEyesAfterDice());
     }
+
     IEnumerator HandleEyesAfterDice()
     {
         yield return new WaitForSeconds(diceDestroyDelay);
@@ -751,6 +1260,7 @@ public class Dreamer : MonoBehaviour
             eyesClosedImage.SetActive(true);
         }
     }
+
     IEnumerator RandomShaking()
     {
         while (true)
@@ -760,9 +1270,9 @@ public class Dreamer : MonoBehaviour
             {
                 currentShake = StartCoroutine(ShakeRoutine(shakeDuration));
             }
-
         }
     }
+
     IEnumerator ShakeRoutine(float duration)
     {
         float elapsed = 0.0f;
@@ -778,8 +1288,10 @@ public class Dreamer : MonoBehaviour
         eyesClosedImage.transform.localPosition = eyesClosedOriginalPos;
         currentShake = null;
     }
+
     public bool IsAbilityActive() => abilityActive;
     public DreamAbility GetCurrentAbility() => currentAbility;
+
     IEnumerator SmoothValueTransition(float startValue, float targetValue, float duration, System.Action<float> onUpdate, System.Action onComplete = null)
     {
         float elasped = 0f;
@@ -797,6 +1309,7 @@ public class Dreamer : MonoBehaviour
         onUpdate?.Invoke(targetValue);
         onComplete?.Invoke();
     }
+
     IEnumerator SmoothShatteredRealityTransition(bool activate)
     {
         float startIntensity = activate ? 0f : 0.76f;
@@ -806,7 +1319,7 @@ public class Dreamer : MonoBehaviour
         float targetXMultiplier = activate ? 0.742f : 1f;
 
         float startMotionBlur = activate ? 0f : 0.053f;
-        float targetMotionBlur = activate ? 0.053f : 0f;
+        float targetMotionBlur = activate ? 0.53f : originalMotionBlur;
 
         Vector2 startCenter = activate ? new Vector2(0.5f, 0.5f) : new Vector2(0.57f, 0.47f);
         Vector2 targetCenter = activate ? new Vector2(0.57f, 0.47f) : new Vector2(0.5f, 0.5f);
@@ -848,101 +1361,24 @@ public class Dreamer : MonoBehaviour
         }
         string direction = activate ? "distorted" : "restored";
         Debug.Log($"Shattered Reality transition complete - reality {direction}");
-    
+
         shatteredRealityTransitionCoroutine = null;
     }
 }
 
+
 public class DiceRotator : MonoBehaviour
-    {
-        private Vector3 rotationSpeed;
-
-        public void Initialize(Vector3 torque)
-        {
-            rotationSpeed = torque;
-        }
-        void Update()
-        {
-            transform.Rotate(rotationSpeed * Time.deltaTime);
-        }
-    }
-
-
-
-/*public class PlayerAbilityManager : MonoBehaviour
 {
-    private Dreamer dreamer;
+    private Vector3 rotationSpeed;
 
-    void Start()
+    public void Initialize(Vector3 torque)
     {
-        dreamer = GetComponent<Dreamer>();
-        if (dreamer == null)
-        {
-            Debug.LogError("Dreamer component not found on PlayerAbilityManager.");
-            return;
-        }
-        if (dreamer.enableAbilities && dreamer.IsAbilityActive())
-        {
-            StartCoroutine(dreamer.QueueAbility());
-            Debug.Log("PlayerAbilityManager started and Dreamer abilities enabled");
-        }
-        else
-        {
-            StartCoroutine(dreamer.ActivateRandomAbility());
-
-        }
-        if (dreamer.abilityUIPanel != null)
-        {
-            dreamer.abilityUIPanel.SetActive(false);
-        }
-        if (dreamer.eyesOpenImage != null)
-        {
-            dreamer.eyesOpenImage.SetActive(true);
-        }
-        if (dreamer.eyesClosedImage != null)
-        {
-            dreamer.eyesClosedImage.SetActive(false);
-        }
-
+        rotationSpeed = torque;
     }
     void Update()
     {
-        if (dreamer == null) return;
-        if (Input.GetKeyDown(KeyCode.E))
-        {
-            if (dreamer.IsAbilityActive())
-            {
-                PlayerAbilityManager abilityManager = GetComponent<PlayerAbilityManager>();
-                if (abilityManager != null)
-                {
-                    abilityManager.StartCoroutine(dreamer.ActivateRandomAbility());
-                }
-            }
-            else if (dreamer.enableAbilities && !dreamer.IsAbilityActive())
-            {
-                PlayerAbilityManager abilityManager = GetComponent<PlayerAbilityManager>();
-                if (abilityManager != null)
-                {
-                    abilityManager.StartCoroutine(dreamer.QueueAbility());
-                }
-            }
-
-        }
-        if (Input.GetKeyDown(KeyCode.Q) && dreamer.IsAbilityActive())
-        {
-            PlayerAbilityManager abilityManager = GetComponent<PlayerAbilityManager>();
-            if (abilityManager != null)
-            {
-                abilityManager.StartCoroutine(dreamer.DeactivateAbility());
-                Debug.Log("Ability deactivated by PlayerAbilityManager");
-            }
-
-        }
-        
-
+        transform.Rotate(rotationSpeed * Time.deltaTime);
     }
-
-} 
-*/
+}
 
 

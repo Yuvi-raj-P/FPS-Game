@@ -12,14 +12,11 @@ public class WeaponSwitching : MonoBehaviour
     public GameObject reloadTime;
     public bool weaponScoped = false;
 
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
         SelectWeapon();
         reloadTime.SetActive(false);
     }
-
-    // Update is called once per frame
     void Update()
     {
         Gun currentGun = transform.GetChild(selectedWeapon).GetComponent<Gun>();
@@ -28,14 +25,14 @@ public class WeaponSwitching : MonoBehaviour
         {
             if (currentGun.IsReloading)
             {
-                ammoText.text = $"0 | {currentGun.magazineSize}";
+                ammoText.text = $"0 <size=70%>/ {currentGun.magazineSize}";
                 reloadTime.SetActive(true);
                 reloadTime.GetComponent<TextMeshProUGUI>().text = $"Reloading in {currentGun.currentReloadTime:0.0}s";
             }
             else
             {
                 reloadTime.SetActive(false);
-                ammoText.text = $"{currentGun.currentAmmo} | {currentGun.magazineSize}";
+                ammoText.text = $"{currentGun.currentAmmo} <size=70%>/ {currentGun.magazineSize}";
             }
 
         }

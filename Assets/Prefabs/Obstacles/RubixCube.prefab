@@ -9,7 +9,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 6850652189777834935}
-  m_Layer: 0
+  m_Layer: 8
   m_Name: RubixCube
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -43,7 +43,8 @@ GameObject:
   - component: {fileID: 7295236195539422640}
   - component: {fileID: 3146303278259752961}
   - component: {fileID: 7130129610187341945}
-  m_Layer: 0
+  - component: {fileID: 1672954317901045813}
+  m_Layer: 8
   m_Name: rubiks_cube
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -178,5 +179,30 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 8834222309054777636, guid: 403cf2de348c0476f8c261bfacfd711e, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1672954317901045813}
   m_SourcePrefab: {fileID: 100100000, guid: 403cf2de348c0476f8c261bfacfd711e, type: 3}
+--- !u!64 &1672954317901045813
+MeshCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8078056106135211225}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 5
+  m_Convex: 0
+  m_CookingOptions: 30
+  m_Mesh: {fileID: -5495902117074765545, guid: bd7b2e171196f42e4a52a0b8ae385763, type: 3}

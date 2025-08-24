@@ -5,6 +5,9 @@ TagManager:
   serializedVersion: 3
   tags:
   - Enemy
+  - FxTemporaire
+  - HealthAdd
+  - RareItem
   layers:
   - Default
   - TransparentFX
@@ -18,7 +21,7 @@ TagManager:
   - Ground
   - Enemy
   - Effects
-  - 
+  - DistanceObject
   - 
   - 
   - 

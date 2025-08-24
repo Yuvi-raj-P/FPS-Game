@@ -24,6 +24,7 @@ public class FlyingEnemies : MonoBehaviour
     public LayerMask obstacleLayerMask = -1;
     public float obstacleCheckDistance = 4f;
     public float sideRayDistance = 3f;
+    public bool ignoreObstacleCollisions = true;
 
     [Header("Flocking Settings")]
     public LayerMask enemyLayerMask;
@@ -42,6 +43,15 @@ public class FlyingEnemies : MonoBehaviour
     public float projectileLifetime = 5f;
     private float nextAttackTime = 0f;
 
+    [Header("Debug Info")]
+    public bool isStuck = false;
+    public float stuckCheckTime = 2f;
+    public float stuckMovementThreshold = 0.1f;
+
+    [Header("Self Destruct")]
+    public float maxStuckTime = 20f;
+    public bool enableSelfDestruct = true;
+
     private float currentSpeed;
     private CharacterController controller;
     private Health playerHealth;
@@ -51,6 +61,9 @@ public class FlyingEnemies : MonoBehaviour
     private Vector3 currentVelocity;
     private Vector3 lastMoveDirection;
     private float bankingRotation;
+    private Vector3 lastPosition;
+    private float stuckTimer = 0f;
+    private float totalStuckTime = 0f;
 
     void Start()
     {
@@ -74,7 +87,7 @@ public class FlyingEnemies : MonoBehaviour
                 Debug.LogError("Player does not have a Health component.");
             }
         }
-
+        lastPosition = transform.position;
         InvokeRepeating(nameof(UpdateTargetOffset), 0, targetOffsetUpdateTime);
     }
 
@@ -88,6 +101,82 @@ public class FlyingEnemies : MonoBehaviour
         HandleMovement();
         HandleFlyingAnimation();
         HandleAttack();
+        IgnoreCollisions();
+        CheckIfStuck();
+    }
+    void CheckIfStuck()
+    {
+        float distanceToPlayer = Vector3.Distance(transform.position, player.position);
+
+        if (distanceToPlayer > stoppingDistance)
+        {
+            float distanceMoved = Vector3.Distance(transform.position, lastPosition);
+
+            if (distanceMoved < stuckMovementThreshold)
+            {
+                stuckTimer += Time.deltaTime;
+
+                if (enableSelfDestruct)
+                {
+                    totalStuckTime += Time.deltaTime;
+
+                    if (totalStuckTime >= maxStuckTime)
+                    {
+                        SelfDestruct();
+                        return;
+                    }
+                }
+                if (stuckTimer >= stuckCheckTime)
+                {
+                    isStuck = true;
+                }
+            }
+            else
+            {
+                stuckTimer = 0f;
+                totalStuckTime = 0f;
+                isStuck = false;
+            }
+        }
+        else
+        {
+            isStuck = false;
+            stuckTimer = 0f;
+            totalStuckTime = 0f;
+        }
+        lastPosition = transform.position;
+    }
+    void SelfDestruct()
+    {
+        if (ignoreObstacleCollisions)
+        {
+            int obstacleLayer = GetObstacleLayerFromMask(obstacleLayerMask);
+            if (obstacleLayer != -1)
+            {
+                Physics.IgnoreLayerCollision(gameObject.layer, obstacleLayer, false);
+            }
+        }
+        Destroy(this.gameObject);
+    }
+    void IgnoreCollisions()
+    {
+        int obstacleLayer = GetObstacleLayerFromMask(obstacleLayerMask);
+        if (obstacleLayer != -1)
+        {
+            Physics.IgnoreLayerCollision(gameObject.layer, obstacleLayer, true);
+        }
+    }
+    int GetObstacleLayerFromMask(LayerMask mask)
+    {
+        int layerIndex = 0;
+        int maskValue = mask.value;
+
+        while (maskValue > 1)
+        {
+            maskValue >>= 1;
+            layerIndex++;
+        }
+        return maskValue == 1 ? layerIndex : -1;
     }
     void HandleMovement()
     {

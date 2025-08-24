@@ -14,85 +14,284 @@ public class PlayerMotor : MonoBehaviour
     public float scopeSpeed = 3f;
     private bool isScoped = false;
 
-    public ParticleSystem sprintEffect;
+    public bool invertedControls = false;
 
+
+    [Header("Flying Settings")]
+    public bool flyingEnabled = false;
+    public float flySpeed = 6f;
+    public float maxFlyHeight = 10f;
+    public float flyGravity = -2f;
+    public float flyRiseSpeed = 5f;
+    public float flyDescendSpeed = 4f;
+    [Header("Flying Animation Settings")]
+    public float levitationSpeed = 3f;
+    public float hoverHeight = 5f;
+    public float hoverAmplitude = 0.5f;
+    public float hoverFrequency = 1f;
+    public float descentSpeed = 2f;
+
+    private float groundLevel;
+    private bool wasGroundedBeforeFlying;
+    private bool isLevitating = false;
+    private bool isDescending = false;
+    private float hoverTimer = 0f;
+    private float targetHoverHeight;
+    private Coroutine flyingTransitionCoroutine;
+
+    public ParticleSystem sprintEffect;
     public bool SpringEffectShowing;
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
+
     void Start()
     {
-        sprintEffect.Stop();
         controller = GetComponent<CharacterController>();
         speed = walkSpeed;
+        groundLevel = transform.position.y;
 
+        if (sprintEffect != null)
+        {
+            sprintEffect.Stop();
+            SpringEffectShowing = false;
+        }
     }
 
-   
     void Update()
     {
         isGrounded = controller.isGrounded;
-        if (speed == sprintSpeed)
+        if (isGrounded && !flyingEnabled)
         {
-            SpringEffectShowing = true;
-            sprintEffect.Play();
+            groundLevel = transform.position.y;
         }
-        else
+
+        SpringEffectShowing = sprinting && !isScoped && isGrounded && !flyingEnabled;
+
+        if (flyingEnabled && !isLevitating && !isDescending)
         {
-            SpringEffectShowing = false;
-            sprintEffect.Stop();
+            hoverTimer += Time.deltaTime;
         }
     }
 
     public void ProcessMove(Vector2 input)
     {
         Vector3 moveDirection = Vector3.zero;
-        moveDirection.x = input.x;
-        moveDirection.z = input.y;
+
+        if (invertedControls)
+        {
+            moveDirection.x = -input.x;
+            moveDirection.z = -input.y;
+        }
+        else
+        {
+            moveDirection.x = input.x;
+            moveDirection.z = input.y;
+        }
         controller.Move(transform.TransformDirection(moveDirection) * speed * Time.deltaTime);
+
+        if (flyingEnabled)
+        {
+            HandleFlyingGravity();
+        }
+        else
+        {
+            HandleNormalGravity();
+        }
+        controller.Move(playerVelocity * Time.deltaTime);
+    }
+    void HandleNormalGravity()
+    {
         playerVelocity.y += gravity * Time.deltaTime;
         if (isGrounded && playerVelocity.y < 0)
         {
-            playerVelocity.y = -2f;
+            playerVelocity.y = -1f;
         }
-        controller.Move(playerVelocity * Time.deltaTime);
-
     }
+    void HandleFlyingMovement()
+    {
+        if (isLevitating)
+        {
+            float currentHeight = transform.position.y - groundLevel;
+            if (currentHeight < targetHoverHeight)
+            {
+                playerVelocity.y = levitationSpeed;
+            }
+            else
+            {
+                playerVelocity.y = 0f;
+                isLevitating = false;
+                hoverTimer = 0f;
+
+            }
+        }
+        else if (!isDescending)
+        {
+            float hoverOffset = Mathf.Sin(hoverTimer * hoverFrequency * 2f * Mathf.PI) * hoverAmplitude;
+            float targetY = groundLevel + targetHoverHeight + hoverOffset;
+            float currentY = transform.position.y;
+
+            if (Mathf.Abs(targetY - currentY) > 0.1f)
+            {
+                playerVelocity.y = (targetY - currentY) * 2f;
+            }
+            else
+            {
+                playerVelocity.y = 0f;
+            }
+        }
+    }
+    void HandleFlyingGravity()
+    {
+        playerVelocity.y += flyGravity * Time.deltaTime;
+
+        float currentHeight = transform.position.y - groundLevel;
+        if (currentHeight >= maxFlyHeight && playerVelocity.y > 0)
+        {
+            playerVelocity.y = 0f;
+        }
+        if (transform.position.y <= groundLevel && playerVelocity.y < 0)
+        {
+            playerVelocity.y = 0f;
+        }
+    }
+    /*public void ProcessFlyInput(bool flyUp, bool flyDown)
+    {
+        if (!flyingEnabled) return;
+        if (flyUp)
+        {
+            float currentHeight = transform.position.y - groundLevel;
+            if (currentHeight < maxFlyHeight)
+            {
+                playerVelocity.y = -flyDescendSpeed;
+            }
+        }
+    }
+    No need to hit the space bar to fly happens automatically once the ability starts*/
+
     public void Jump()
     {
-        if (isGrounded)
+        if (flyingEnabled)
+        {
+            float currentHeight = transform.position.y - groundLevel;
+            if (currentHeight < maxFlyHeight)
+            {
+                playerVelocity.y = flyRiseSpeed;
+            }
+        }
+        else if (isGrounded)
         {
             playerVelocity.y = Mathf.Sqrt(jumpHeight * -3.0f * gravity);
         }
     }
+
     public void Sprint(bool isSprinting)
     {
         sprinting = isSprinting;
+
         if (!isScoped)
         {
             if (isSprinting)
             {
-                speed = sprintSpeed;
+                speed = flyingEnabled ? flySpeed * 1.5f : sprintSpeed;
+                if (isGrounded && !flyingEnabled && sprintEffect != null && !sprintEffect.isPlaying)
+                {
+                    sprintEffect.Play();
+                }
             }
             else
             {
-                speed = walkSpeed;
+                speed = flyingEnabled ? flySpeed : walkSpeed;
+                if (sprintEffect != null && sprintEffect.isPlaying)
+                {
+                    sprintEffect.Stop();
+                }
             }
-        }
-    }
-    public void SetScoped(bool scoped)
-    {
-        isScoped = scoped;
-        if (scoped)
-        {
-
-            speed = scopeSpeed;
         }
         else
         {
-            speed = sprinting ? sprintSpeed : walkSpeed;
+            if (sprintEffect != null && sprintEffect.isPlaying)
+            {
+                sprintEffect.Stop();
+            }
         }
+    }
+
+    public void SetScoped(bool scoped)
+    {
         isScoped = scoped;
 
+        if (scoped)
+        {
+            speed = scopeSpeed;
+            if (sprintEffect != null && sprintEffect.isPlaying)
+            {
+                sprintEffect.Stop();
+            }
+        }
+        else
+        {
+            if (flyingEnabled)
+            {
+                speed = sprinting ? flySpeed * 1.5f : flySpeed;
+            }
+            speed = sprinting ? sprintSpeed : walkSpeed;
+            if (sprinting && isGrounded && sprintEffect != null && !sprintEffect.isPlaying)
+            {
+                sprintEffect.Play();
+            }
+        }
+    }
+    public void SetInvertedControls(bool inverted)
+    {
+        invertedControls = inverted;
+    }
+    public void ToggleInvertedControls()
+    {
+        invertedControls = !invertedControls;
+    }
+    public bool GetInvertedControls()
+    {
+        return invertedControls;
+    }
+    public void SetFlying(bool flying)
+    {
+        if (flyingEnabled != flying)
+        {
+            flyingEnabled = flying;
+            if (flying)
+            {
+                wasGroundedBeforeFlying = isGrounded;
+                speed = sprinting ? flySpeed * 1 / 5f : flySpeed;
 
+                if (sprintEffect != null && sprintEffect.isPlaying)
+                {
+                    sprintEffect.Stop();
+                }
+            }
+            else
+            {
+                speed = sprinting ? sprintSpeed : walkSpeed;
+
+                if (playerVelocity.y > 0)
+                {
+                    playerVelocity.y = 0f;
+                }
+            }
+        }
+    }
+    public void ToggleFlying()
+    {
+        SetFlying(!flyingEnabled);
+    }
+    public bool GetFlying()
+    {
+        return flyingEnabled;
+    }
+    public float GetCurrentFlyHeight()
+    {
+        return Mathf.Max(0f, transform.position.y - groundLevel);
+    }
+    public float GetMaxFlyHeight()
+    {
+        return maxFlyHeight;
     }
     
 }

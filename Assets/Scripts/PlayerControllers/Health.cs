@@ -8,6 +8,8 @@ public class Health : MonoBehaviour
     public float maxArmor = 50;
     public float currentArmor;
     public int armorRegenRate = 1;
+    public AudioSource healthSound;
+    public AudioSource damageSound;
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
@@ -27,6 +29,7 @@ public class Health : MonoBehaviour
     }
     public void TakeDamage(float damage)
     {
+        damageSound.PlayOneShot(damageSound.clip);
         float damageAbsorbedByArmor = Mathf.Min(damage, currentArmor);
         currentArmor -= damageAbsorbedByArmor;
 
@@ -35,6 +38,7 @@ public class Health : MonoBehaviour
         {
             currentHealth -= remainingDamage;
         }
+        
         Debug.Log("Player took " + damage + " damage. Armor: " + currentArmor + ", Health: " + currentHealth);
     }
     void Die()
@@ -57,6 +61,25 @@ public class Health : MonoBehaviour
         }
 
     }
+    public void Heal(int healAmount)
+{
+    float healRemaining = healAmount;
+    
+    if (currentHealth < maxHealth)
+    {
+        float healthToHeal = Mathf.Min(healRemaining, maxHealth - currentHealth);
+        currentHealth += healthToHeal;
+        healRemaining -= healthToHeal;
+    }
+    
+    if (healRemaining > 0 && currentArmor < maxArmor)
+    {
+        currentArmor += healRemaining;
+        currentArmor = Mathf.Min(currentArmor, maxArmor);
+    }
+    
+    healthSound.Play();
+}
     
     /*void OnTriggerEnter(Collider other)
     {
