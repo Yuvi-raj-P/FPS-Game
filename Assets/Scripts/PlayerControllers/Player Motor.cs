@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 public class PlayerMotor : MonoBehaviour
@@ -90,6 +91,7 @@ public class PlayerMotor : MonoBehaviour
         if (flyingEnabled)
         {
             HandleFlyingGravity();
+            HandleFlyingMovement();
         }
         else
         {
@@ -170,11 +172,12 @@ public class PlayerMotor : MonoBehaviour
     {
         if (flyingEnabled)
         {
-            float currentHeight = transform.position.y - groundLevel;
+            /*float currentHeight = transform.position.y - groundLevel;
             if (currentHeight < maxFlyHeight)
             {
                 playerVelocity.y = flyRiseSpeed;
-            }
+            } No Manual flying */
+            return;
         }
         else if (isGrounded)
         {
@@ -255,27 +258,66 @@ public class PlayerMotor : MonoBehaviour
     {
         if (flyingEnabled != flying)
         {
+            if (flyingTransitionCoroutine != null)
+            {
+                StopCoroutine(flyingTransitionCoroutine);
+                flyingTransitionCoroutine = null;
+            }
             flyingEnabled = flying;
             if (flying)
             {
-                wasGroundedBeforeFlying = isGrounded;
-                speed = sprinting ? flySpeed * 1 / 5f : flySpeed;
-
-                if (sprintEffect != null && sprintEffect.isPlaying)
-                {
-                    sprintEffect.Stop();
-                }
+                StartFlying();
             }
             else
             {
-                speed = sprinting ? sprintSpeed : walkSpeed;
-
-                if (playerVelocity.y > 0)
-                {
-                    playerVelocity.y = 0f;
-                }
+                StopFlying();
             }
         }
+    }
+    void StartFlying()
+    {
+        wasGroundedBeforeFlying = isGrounded;
+        targetHoverHeight = hoverHeight;
+        isLevitating = true;
+        isDescending = false;
+        hoverTimer = 0f;
+
+        speed = sprinting ? flySpeed * 1.5f : flySpeed;
+
+        if (sprintEffect != null && sprintEffect.isPlaying)
+        {
+            sprintEffect.Stop();
+        }
+    }
+    void StopFlying()
+    {
+        isLevitating = false;
+        isDescending = true;
+        flyingTransitionCoroutine = StartCoroutine(DescentSequence());
+    }
+    IEnumerator DescentSequence()
+    {
+        while (transform.position.y > groundLevel + 0.5f)
+        {
+            playerVelocity.y = -descentSpeed;
+            yield return null;
+        }
+        while (transform.position.y > groundLevel + 0.1f)
+        {
+            playerVelocity.y = -descentSpeed * 0.5f;
+            yield return null;
+        }
+
+        playerVelocity.y = 0f;
+        isDescending = false;
+
+        speed = sprinting ? sprintSpeed : walkSpeed;
+
+        if (sprinting && sprintEffect != null && !sprintEffect.isPlaying)
+        {
+            sprintEffect.Play();
+        }
+        flyingTransitionCoroutine = null;
     }
     public void ToggleFlying()
     {
@@ -293,5 +335,17 @@ public class PlayerMotor : MonoBehaviour
     {
         return maxFlyHeight;
     }
-    
+    public bool IsLevitating()
+    {
+        return isLevitating;
+    }
+    public bool IsDescending()
+    {
+        return isDescending;
+    }
+    public bool IsHovering()
+    {
+        return flyingEnabled && !isLevitating && !isDescending;
+    }
+
 }

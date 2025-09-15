@@ -198,9 +198,18 @@ public class Gun : MonoBehaviour
 
 
             Damage damageScript = hit.transform.GetComponent<Damage>();
+            BossController bossScript = hit.transform.GetComponent<BossController>();
             if (damageScript != null)
             {
                 damageScript.TakeDamage(damage);
+            }
+            else if (bossScript != null)
+            {
+                bossScript.TakeDamage(damage);
+            }
+            else
+            {
+                Debug.Log("No Damage since there is no damage script to the object");
             }
             GameObject impactGO = Instantiate(impactEffect, hit.point, Quaternion.LookRotation(hit.normal));
             Destroy(impactGO, 2f);

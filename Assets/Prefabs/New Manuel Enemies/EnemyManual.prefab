@@ -176,6 +176,7 @@ MonoBehaviour:
   deathSound: {fileID: 8300000, guid: 1a31a43e128cc46279a6d2846c8be3c7, type: 3}
   pitchForEffect: 2.42
   volume: 0.8
+  damageIndicatorPrefab: {fileID: 1195421593434093691, guid: fb2c4b4f2c0094e45b75e192b1bca308, type: 3}
 --- !u!136 &2874290021166751096
 CapsuleCollider:
   m_ObjectHideFlags: 0

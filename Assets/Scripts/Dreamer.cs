@@ -135,6 +135,23 @@ public class Dreamer : MonoBehaviour
     public bool overrideAbilityDuration = false;
     public float testAbilityDuration = 5f;
 
+    [Header("Boss Fight System")]
+    public bool enableBossFights = true;
+    public int wavesBeforeBoss = 5;
+    public float bossFightCooldown = 5f;
+    public GameObject bossPrefab;
+
+    private int currentWaveCount = 0;
+    private bool isBossFightActive = false;
+    private bool isBossFightCooldownActive = false;
+    private BossController currentBoss;
+
+    [Header("Camera Shake Settings")]
+    public CameraShake cameraShake;
+    public float diceRollShakeDuration = 1f;
+    public float diceRollShakeMagnitude = 0.5f;
+
+
     public enum AbilityType
     {
         FogOfThoughts,
@@ -171,6 +188,14 @@ public class Dreamer : MonoBehaviour
             if (playerMotor == null)
             {
                 Debug.LogWarning("PlayerMotor NOT FOUND FIX THIS IMMEDIATLY BISH");
+            }
+        }
+        if (cameraShake == null)
+        {
+            cameraShake = FindObjectOfType<CameraShake>();
+            if (cameraShake == null)
+            {
+                Debug.LogWarning("CAMERA SHAKE NOT AVAILABLE");
             }
         }
 
@@ -314,6 +339,16 @@ public class Dreamer : MonoBehaviour
         {
             StartCoroutine(ForceDiceRoll());
         }
+        if (Input.GetKeyDown(KeyCode.B) && !isBossFightActive && !isDiceRollActive)
+        {
+            StartCoroutine(ForceBossFight());
+        }
+    }
+    IEnumerator ForceBossFight()
+    {
+        StartCoroutine(StartBossFight());
+        yield return null;
+
     }
     IEnumerator ForceDiceRoll()
     {
@@ -385,10 +420,16 @@ public class Dreamer : MonoBehaviour
     {
         while (true)
         {
-            while (abilityActive)
+            while (abilityActive || isBossFightActive || isBossFightCooldownActive)
             {
                 isDiceRollActive = false;
                 yield return new WaitForSeconds(1f);
+            }
+            if (enableBossFights && currentWaveCount >= wavesBeforeBoss)
+            {
+                StartCoroutine(StartBossFight());
+                yield return new WaitUntil(() => !isBossFightActive && !isBossFightCooldownActive);
+                continue;
             }
 
             currentDiceRollDelay = Random.Range(minDiceRollTime, maxDiceRollTime);
@@ -409,8 +450,168 @@ public class Dreamer : MonoBehaviour
                 yield return currentShake;
             }
             RollDice();
+            currentWaveCount++;
         }
     }
+    IEnumerator StartBossFight()
+    {
+        Debug.Log("Boss Fight Starting!");
+        isBossFightActive = true;
+        currentWaveCount = 0;
+
+        if (WavesManager.Instance != null)
+        {
+            WavesManager.Instance.SetBossFightMode(true);
+        }
+        else
+        {
+            Debug.LogWarning("BRUHGHGHGH THERE IS NO WAVESmANAGER HERE");
+        }
+        if (cameraShake != null)
+        {
+            StartCoroutine(cameraShake.Shake(1f, 0.4f));
+        }
+
+
+        if (abilityTitleText != null)
+        {
+            abilityUIPanel.SetActive(true);
+            abilityTitleText.text = "<color=red><shake><size=150%>BOSS FIGHT!</size></shake></color>";
+            abilityTitleText.gameObject.SetActive(true);
+
+            if (abilityDescriptionText != null)
+            {
+                abilityDescriptionText.text = "<color=yellow>Defeat the boss to continue!</color>";
+                abilityDescriptionText.gameObject.SetActive(true);
+            }
+        }
+        if (bossPrefab != null && spawnPoint != null)
+        {
+            Vector3 bossSpawnPosition = spawnPoint.position + Vector3.up * 5f;
+            GameObject bossObject = Instantiate(bossPrefab, bossSpawnPosition, Quaternion.identity);
+            currentBoss = bossObject.GetComponent<BossController>();
+
+            if (currentBoss == null)
+            {
+                Debug.LogError("Boss prefab must have BossController component");
+            }
+
+            //StartCoroutine(BossFightVisualEffects());
+            //StartCoroutine(BossFightDiceSpawning());
+
+            yield return new WaitForSeconds(2f);
+
+            if (abilityUIPanel != null)
+            {
+                abilityUIPanel.SetActive(false);
+            }
+        }
+    }
+    public void OnBossSpawned(BossController boss)
+    {
+        currentBoss = boss;
+    }
+    public void OnBossDefeated()
+    {
+        isBossFightActive = false;
+        currentBoss = null;
+        StopCoroutine(BossFightVisualEffects());
+        StopCoroutine(BossFightDiceSpawning());
+
+        if (WavesManager.Instance != null)
+        {
+            WavesManager.Instance.SetBossFightMode(false);
+        }
+
+        if (abilityTitleText != null)
+        {
+            abilityUIPanel.SetActive(true);
+            abilityTitleText.text = "<color=green><size=120%>VICTORY!</size></color>";
+            abilityTitleText.gameObject.SetActive(true);
+
+            if (abilityDescriptionText != null)
+            {
+                abilityDescriptionText.text = "Boss defated! Preparing for next wave...";
+                abilityDescriptionText.gameObject.SetActive(true);
+            }
+        }
+
+        StartCoroutine(BossFightCooldown());
+    }
+    IEnumerator BossFightCooldown()
+    {
+        isBossFightCooldownActive = true;
+
+        yield return new WaitForSeconds(bossFightCooldown);
+
+        if (abilityUIPanel != null)
+        {
+            abilityUIPanel.SetActive(false);
+        }
+        isBossFightCooldownActive = false;
+    }
+    IEnumerator BossFightVisualEffects()
+    {
+        float originalSaturation = colorAdjustments?.saturation.value ?? 0f;
+        float originalContrast = colorAdjustments?.contrast.value ?? 0f;
+        float originalHue = colorAdjustments?.hueShift.value ?? 0f;
+        float originalLensIntensity = lensDistortion?.intensity.value ?? 0f;
+
+        while (isBossFightActive)
+        {
+            float time = Time.time;
+
+            if (colorAdjustments != null)
+            {
+                float saturationWave = Mathf.Sin(time * 8f) * 50f;
+                colorAdjustments.saturation.value = originalSaturation + saturationWave;
+
+                float contrastPulse = Mathf.Sin(time * 6f) * 30f;
+                colorAdjustments.contrast.value = originalContrast + contrastPulse;
+
+                float hueShift = Mathf.Sin(time * 4f) * 180f;
+                colorAdjustments.hueShift.value = originalHue + hueShift;
+            }
+            if (lensDistortion != null)
+            {
+                float distortionPulse = Mathf.Sin(time * 10f) * 0.3f;
+                lensDistortion.intensity.value = originalLensIntensity + distortionPulse;
+            }
+            yield return null;
+        }
+
+        if (colorAdjustments != null)
+        {
+            colorAdjustments.saturation.value = originalSaturation;
+            colorAdjustments.contrast.value = originalContrast;
+            colorAdjustments.hueShift.value = originalHue;
+        }
+        if (lensDistortion != null)
+        {
+            lensDistortion.intensity.value = originalLensIntensity;
+        }
+    }
+    IEnumerator BossFightDiceSpawning()
+    {
+        while (isBossFightActive)
+        {
+            int bossDiceCount = Random.Range(crazyDiceMinCount * 2, crazyDiceMaxCount * 2);
+
+            if (enableCrazyDiceMode && useDicePooling)
+            {
+                StartCoroutine(SpawnCrazyDice(bossDiceCount));
+            }
+            else
+            {
+                for (int i = 0; i < Random.Range(10, 20); i++)
+                {
+                    SpawnSingleDie(i);
+                }
+            }
+            yield return new WaitForSeconds(Random.Range(0.5f, 1.5f));
+        }
+    }
+
 
     void RollDice()
     {
@@ -419,17 +620,29 @@ public class Dreamer : MonoBehaviour
             Debug.LogWarning("Die prefab or spawn point is not assigned in the Inspector.");
             return;
         }
+        if (isBossFightActive || isBossFightCooldownActive)
+        {
+            return;
+        }
         StartCoroutine(FlickerEffectSequence());
     }
 
     IEnumerator FlickerEffectSequence()
     {
+
+        if (isBossFightActive && isBossFightCooldownActive)
+        {
+            yield break;
+        }
+
         StartCoroutine(FlickerEffect());
 
         yield return new WaitForSeconds(flickerDuration);
 
         StartCoroutine(SlowMotionEffect());
         StartCoroutine(ShowEyesShocked());
+
+        
 
         if (spawnMultipleDice)
         {
@@ -455,7 +668,7 @@ public class Dreamer : MonoBehaviour
         {
             SpawnSingleDie(0);
         }
-        if (enableAbilities)
+        if (enableAbilities && !isBossFightActive)
         {
             StartCoroutine(QueueAbility());
         }
@@ -480,7 +693,8 @@ public class Dreamer : MonoBehaviour
                 currentAbility = availableAbilities[0];
             }
         }
-        else{
+        else
+        {
             currentAbility = availableAbilities[Random.Range(0, availableAbilities.Count)];
         }
 
@@ -870,7 +1084,7 @@ public class Dreamer : MonoBehaviour
             colorAdjustments.saturation.value = originalSaturation;
             colorAdjustments.contrast.value = originalContrast;
         }
-        if (currentShake == null && eyesClosedImage != null && eyesClosedImage.activeSelf)
+        if (currentShake == null && eyesClosedImage != null && eyesClosedImage.activeSelf && !isBossFightActive)
         {
             currentShake = StartCoroutine(ShakeRoutine(neuralTwistTransitionDuration * 0.8f));
         }
@@ -995,6 +1209,10 @@ public class Dreamer : MonoBehaviour
 
     IEnumerator SpawnCrazyDice(int diceCount)
     {
+        if (isBossFightActive && isBossFightCooldownActive)
+        {
+            yield break;
+        }
         int diceBatchSize = 20;
         int spawned = 0;
 

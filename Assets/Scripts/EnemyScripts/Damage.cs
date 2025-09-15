@@ -7,6 +7,7 @@ public class Damage : MonoBehaviour
     public AudioClip deathSound;
     public float pitchForEffect;
     public float volume;
+    public GameObject damageIndicatorPrefab;
 
     void Update()
     {
@@ -34,5 +35,8 @@ public class Damage : MonoBehaviour
     public void TakeDamage(float amount)
     {
         health -= amount;
+        Debug.Log("Instatiating the number");
+        DamageIndicator indicator = Instantiate(damageIndicatorPrefab, transform.position, Quaternion.identity).GetComponent<DamageIndicator>();
+        indicator.SetDamageText(amount);
     }
 }

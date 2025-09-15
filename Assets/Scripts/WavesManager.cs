@@ -82,6 +82,7 @@ public class WavesManager : MonoBehaviour
     private int currentSpawnIndex = 0;
 
     private float rareItemCheckCountdown;
+    private bool isBossFightActive = false;
     public int CurrentWaveNumber { get { return waveNumber; } }
 
     void Awake()
@@ -111,6 +112,10 @@ public class WavesManager : MonoBehaviour
 
     void Update()
     {
+        if (isBossFightActive)
+        {
+            return;
+        }
         if (state == SpawnState.WAITING)
         {
             if (!EnemyIsAlive())
@@ -143,6 +148,25 @@ public class WavesManager : MonoBehaviour
                 rareItemCheckCountdown = rareItemCheckInterval;
             }
         }
+    }
+    public void SetBossFightMode(bool active)
+    {
+        isBossFightActive = active;
+        if (active)
+        {
+            Debug.Log("WavesManager: Boss Fight enabled - stopping all enemy spawns");
+            StopAllCoroutines();
+            state = SpawnState.WAITING;
+        }
+        else
+        {
+            waveCountdown = timeBetweenWaves;
+            state = SpawnState.COUNTING;
+        }
+    }
+    public bool IsBossFightActive()
+    {
+        return isBossFightActive;
     }
     void CheckRareItemSpawning()
     {

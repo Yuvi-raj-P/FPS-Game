@@ -199,6 +199,7 @@ MonoBehaviour:
   deathSound: {fileID: 8300000, guid: 1a31a43e128cc46279a6d2846c8be3c7, type: 3}
   pitchForEffect: 1.6
   volume: 0.8
+  damageIndicatorPrefab: {fileID: 1195421593434093691, guid: fb2c4b4f2c0094e45b75e192b1bca308, type: 3}
 --- !u!1 &5281697232617391237
 GameObject:
   m_ObjectHideFlags: 0
