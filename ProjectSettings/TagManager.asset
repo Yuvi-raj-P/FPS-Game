@@ -8,6 +8,7 @@ TagManager:
   - FxTemporaire
   - HealthAdd
   - RareItem
+  - Projectile
   layers:
   - Default
   - TransparentFX
@@ -22,7 +23,7 @@ TagManager:
   - Enemy
   - Effects
   - DistanceObject
-  - 
+  - Projectiles
   - 
   - 
   - 

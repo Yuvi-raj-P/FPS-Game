@@ -10,7 +10,6 @@ public class Wave
     public float spawnRate;
 }
 
-
 [System.Serializable]
 public class RareItem
 {
@@ -85,6 +84,9 @@ public class WavesManager : MonoBehaviour
     private bool isBossFightActive = false;
     public int CurrentWaveNumber { get { return waveNumber; } }
 
+    private Coroutine spawnRoutine;
+    private Coroutine waitForBossRoutine;
+
     void Awake()
     {
         if (Instance == null)
@@ -131,7 +133,7 @@ public class WavesManager : MonoBehaviour
         {
             if (state != SpawnState.SPAWNING)
             {
-                StartCoroutine(SpawnWave(GenerateWave()));
+                spawnRoutine = StartCoroutine(SpawnWave(GenerateWave()));
             }
         }
         else
@@ -151,18 +153,60 @@ public class WavesManager : MonoBehaviour
     }
     public void SetBossFightMode(bool active)
     {
-        isBossFightActive = active;
         if (active)
         {
-            Debug.Log("WavesManager: Boss Fight enabled - stopping all enemy spawns");
-            StopAllCoroutines();
+            StopSpawning();
+            if (IsAnyEnemyAliveImmediate())
+            {
+                if (waitForBossRoutine == null)
+                {
+                    waitForBossRoutine = StartCoroutine(WaitForEnemiesBeforeBossFight());
+                }
+                return;
+            }
+            isBossFightActive = true;
             state = SpawnState.WAITING;
         }
         else
         {
+            isBossFightActive = false;
+            if (waitForBossRoutine != null)
+            {
+                StopCoroutine(waitForBossRoutine);
+                waitForBossRoutine = null;
+            }
             waveCountdown = timeBetweenWaves;
             state = SpawnState.COUNTING;
         }
+    }
+    private void StopSpawning()
+    {
+        if (spawnRoutine != null)
+        {
+            StopCoroutine(spawnRoutine);
+            spawnRoutine = null;
+        }
+        state = SpawnState.WAITING;
+    }
+    private IEnumerator WaitForEnemiesBeforeBossFight()
+    {
+        while (IsAnyEnemyAliveImmediate())
+        {
+            yield return new WaitForSeconds(0.25f);
+        }
+        isBossFightActive = true;
+        state = SpawnState.WAITING;
+        waitForBossRoutine = null;
+    }
+    private bool IsAnyEnemyAliveImmediate()
+    {
+        GameObject[] enemies = GameObject.FindGameObjectsWithTag("Enemy");
+        return enemies.Length > 0;
+    }
+    private int GetEnemyCount()
+    {
+        GameObject[] enemies = GameObject.FindGameObjectsWithTag("Enemy");
+        return enemies.Length;
     }
     public bool IsBossFightActive()
     {
@@ -504,6 +548,8 @@ public class WavesManager : MonoBehaviour
             yield return new WaitForSeconds(1f / _wave.spawnRate);
         }
         state = SpawnState.WAITING;
+
+        spawnRoutine = null;
         yield break;
     }
 

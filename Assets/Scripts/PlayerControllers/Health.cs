@@ -1,3 +1,4 @@
+using System.Reflection.Emit;
 using UnityEngine;
 
 public class Health : MonoBehaviour
@@ -10,25 +11,41 @@ public class Health : MonoBehaviour
     public int armorRegenRate = 1;
     public AudioSource healthSound;
     public AudioSource damageSound;
+    public AudioSource deathSound;
 
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
+    public GameObject gameManager;
+
+    private bool isDying = false;
+    public LevelLoader levelLoader;
+    public string gameOverSceneName = "GameOver";
+
     void Start()
     {
         currentHealth = maxHealth;
         currentArmor = maxArmor;
+
+        if (levelLoader == null)
+        {
+            Debug.LogWarning("LevelLoader reference is missing in Health script.");
+        }
     }
 
     // Update is called once per frame
     void Update()
     {
-        RegenerateHealth();
-        if (currentHealth <= 0)
+        if (!isDying)
         {
-            Die();
+            RegenerateHealth();
+            if (currentHealth <= 0)
+            {
+                Die();
+            }
         }
+        
     }
     public void TakeDamage(float damage)
     {
+        if (isDying) return;
         damageSound.PlayOneShot(damageSound.clip);
         float damageAbsorbedByArmor = Mathf.Min(damage, currentArmor);
         currentArmor -= damageAbsorbedByArmor;
@@ -43,9 +60,43 @@ public class Health : MonoBehaviour
     }
     void Die()
     {
-        Debug.Log("Player has died.");
-        this.gameObject.SetActive(false);
+        if (isDying) return;
+        isDying = true;
+
+        if (deathSound != null)
+        {
+            deathSound.Play();
+        }
+
+        Destroy(gameManager);
+        if (levelLoader != null)
+        {
+            DisablePlayerControls();
+            levelLoader.LoadSpecificLevel(gameOverSceneName);
+        }
+        else
+        {
+            this.gameObject.SetActive(false);
+        }
     }
+
+    void DisablePlayerControls()
+    {
+        var movement = GetComponent<PlayerMovement>();
+        if (movement != null)
+        {
+            movement.enabled = false;
+        }
+        var weapons = GetComponentsInChildren<Gun>(true);
+        foreach (var weapon in weapons)
+        {
+            weapon.enabled = false;
+        }
+        
+        var rb = GetComponent<Rigidbody>();
+        if (rb != null) rb.isKinematic = true;
+    }
+
     void RegenerateHealth()
     {
         if (currentHealth < maxHealth)
@@ -81,13 +132,4 @@ public class Health : MonoBehaviour
     healthSound.Play();
 }
     
-    /*void OnTriggerEnter(Collider other)
-    {
-        if (other.CompareTag("Enemy"))
-        {
-            int damage = other.GetComponent<Enemy>().attackDamage;
-            TakeDamage(damage);
-        }
-    }*/
-
 }

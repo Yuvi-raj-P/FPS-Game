@@ -130,6 +130,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   health: 100
+  deathSound: {fileID: 0}
+  pitchForEffect: 0
+  volume: 0
+  damageIndicatorPrefab: {fileID: 0}
 --- !u!114 &3196926027681486110
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -159,6 +163,7 @@ MonoBehaviour:
     m_Bits: 256
   obstacleCheckDistance: 4
   sideRayDistance: 3
+  ignoreObstacleCollisions: 1
   enemyLayerMask:
     serializedVersion: 2
     m_Bits: 1024
@@ -172,6 +177,11 @@ MonoBehaviour:
   attackRange: 15
   projectileSpeed: 30
   projectileLifetime: 5
+  isStuck: 0
+  stuckCheckTime: 2
+  stuckMovementThreshold: 0.1
+  maxStuckTime: 20
+  enableSelfDestruct: 1
 --- !u!1 &4664520280403647609
 GameObject:
   m_ObjectHideFlags: 0
@@ -307,7 +317,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &8763919456462378823
 Transform:
   m_ObjectHideFlags: 0

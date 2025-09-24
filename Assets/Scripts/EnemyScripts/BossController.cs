@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections;
+using UnityEngine.UI;
 
 public class BossController : MonoBehaviour
 {
@@ -10,7 +11,7 @@ public class BossController : MonoBehaviour
     [Header("Boss Events")]
     public UnityEngine.Events.UnityEvent OnBossSpawned;
     public UnityEngine.Events.UnityEvent OnBossDeath;
-
+    
     [Header("Visual Effects")]
     public GameObject deathEffect;
     public AudioClip deathSound;
@@ -18,6 +19,9 @@ public class BossController : MonoBehaviour
 
     private Dreamer dreamerScript;
     private bool isDead = false;
+
+    private Slider healthSlider;
+
 
     void Start()
     {
@@ -36,13 +40,23 @@ public class BossController : MonoBehaviour
         {
             dreamerScript.OnBossSpawned(this);
         }
+        UpdateHealthUI();
 
     }
+    private void UpdateHealthUI()
+    {
+        if (healthSlider == null) return;
+        healthSlider.minValue = 0f;
+        healthSlider.maxValue = maxHealth;
+        healthSlider.value = currentHealth;
+    }
+    
     public void TakeDamage(float damage)
     {
         if (isDead) return;
         currentHealth -= damage;
         currentHealth = Mathf.Max(0, currentHealth);
+        UpdateHealthUI();
 
         if (currentHealth <= 0 && !isDead)
         {
@@ -79,6 +93,13 @@ public class BossController : MonoBehaviour
     public bool IsDead() => isDead;
     public float GetHealthPercentage() => currentHealth / maxHealth;
 
+    public void SetHealthSlider(Slider slider)
+    {
+        healthSlider = slider;
+        UpdateHealthUI();
+    }
+
+
     void Update()
     {
         /* Testing Purposes
@@ -86,6 +107,7 @@ public class BossController : MonoBehaviour
         {
             TakeDamage(20f);
         }*/
+        
     }
 
 }

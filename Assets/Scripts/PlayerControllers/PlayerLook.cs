@@ -14,16 +14,22 @@ public class PlayerLook : MonoBehaviour
 
     private float currentTargetFov;
 
+    [Header("Sensitivity Settings")]
+    public float minSensitivity = 5f;
+    public float maxSensitivity = 100f;
+
     void Awake()
     {
-        #if UNITY_EDITOR
-            xSensitivity = 200f;
-            ySensitivity = 200f;
-        #else
+#if UNITY_EDITOR
+        xSensitivity = 200f;
+        ySensitivity = 200f;
+#else
             xSensitivity = 50f;
             ySensitivity = 50f;
-        #endif
+#endif
         currentTargetFov = defaultFov;
+
+        LoadSensitivitySettings();
     }
 
     void Start()
@@ -58,5 +64,40 @@ public class PlayerLook : MonoBehaviour
         cam.transform.localRotation = Quaternion.Euler(xRotation, 0f, 0f);
         transform.Rotate(Vector3.up * (mouseX * Time.deltaTime * xSensitivity));
 
+    }
+    public void SetXSensitivity(float sensitivity)
+    {
+        xSensitivity = Mathf.Lerp(minSensitivity, maxSensitivity, sensitivity);
+        SaveSensitivitySettings();
+    }
+    public void SetYSensitivity(float sensitivity)
+    {
+        ySensitivity = Mathf.Lerp(minSensitivity, maxSensitivity, sensitivity);
+        SaveSensitivitySettings();
+    }
+    public float GetNormalizedXSensitivity()
+    {
+        return Mathf.InverseLerp(minSensitivity, maxSensitivity, xSensitivity);
+    }
+    public float GetNormalizedYSensitivity()
+    {
+        return Mathf.InverseLerp(minSensitivity, maxSensitivity, ySensitivity);
+    }
+    private void SaveSensitivitySettings()
+    {
+        PlayerPrefs.SetFloat("MouseXSensitivity", xSensitivity);
+        PlayerPrefs.SetFloat("MouseYSensitivity", ySensitivity);
+        PlayerPrefs.Save();
+    }
+    private void LoadSensitivitySettings()
+    {
+        if (PlayerPrefs.HasKey("MouseXSensitivity"))
+        {
+            xSensitivity = PlayerPrefs.GetFloat("MouseXSensitivity");
+        }
+        if (PlayerPrefs.HasKey("MouseYSensitivity"))
+        {
+            ySensitivity = PlayerPrefs.GetFloat("MouseYSensitivity");
+        }
     }
 }

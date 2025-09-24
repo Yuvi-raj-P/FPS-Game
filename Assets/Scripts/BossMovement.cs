@@ -41,6 +41,12 @@ public class BossMovement : MonoBehaviour
     public float projectileSpeed = 25f;
     public float projectileLifetime = 8f;
     private float nextAttackTime = 0f;
+    public float aimYOffset = 0.75f;
+
+    [Header("Projectile Speed Scaling")]
+    public bool scaleProjectileSpeedByPhase = true;
+    public float[] phaseHealthThreshold = new float[] { 0.66f, 0.33f };
+    public float[] phaseSpeedMultipliers = new float[] { 1.0f, 1.25f, 1.5f };
 
     [Header("Boss Special Abilities")]
     public bool enableMultiShot = true;
@@ -48,6 +54,19 @@ public class BossMovement : MonoBehaviour
     public float multiShotSpread = 15f;
     public float specialAttackCooldown = 8f;
     private float nextSpecialAttackTime = 0f;
+
+    [Header("Radial Pattern Settings")]
+    public bool enableRadialAtHalfHP = true;
+    public float radialHealthThreshold = 0.5f;
+    public int radialShotCount = 24;
+    public int radialWaves = 3;
+    public float radialWaveInterval = 0.2f;
+    public float radialGapAngle = 25f;
+    public float radialStartAngleOffsetPerWave = 10f;
+    public float radialProjectileSpeedMultiplier = 0.75f;
+    public float radialCooldown = 6f;
+    private float nextRadialTime = 0f;
+
 
     [Header("Boss Aggression")]
     public float aggressionLevel = 1f;
@@ -78,6 +97,20 @@ public class BossMovement : MonoBehaviour
     private Vector3 lastPosition;
     private float stuckTimer = 0f;
     private float totalStuckTime = 0f;
+
+    private int previousPhase = -1;
+
+    [Header("Sound Effects")]
+    public AudioSource audioSource;
+    public AudioClip phaseChangeSound;
+    public AudioClip radialAttackSound;
+    public AudioClip boneProjectileSound;
+    public float minPitchVariation = 0.9f;
+    public float maxPitchVariation = 1.1f;
+
+    public float boneProjectileVolume = 0.1f;
+    public float radialAttackVolume = 1.0f;
+    public float phaseChangeVolume = 1.0f;
 
     void Start()
     {
@@ -117,6 +150,15 @@ public class BossMovement : MonoBehaviour
         InvokeRepeating(nameof(UpdateTargetOffset), 0, targetOffsetUpdateTime);
 
         Debug.Log("Boss Movement initialized!");
+
+        if (audioSource == null)
+        {
+            audioSource = GetComponent<AudioSource>();
+            if (audioSource == null)
+            {
+                audioSource = gameObject.AddComponent<AudioSource>();
+            }
+        }
     }
 
     void UpdateTargetOffset()
@@ -141,15 +183,29 @@ public class BossMovement : MonoBehaviour
         {
             float healthPercentage = bossController.GetHealthPercentage();
             bool shouldBeInRage = healthPercentage <= rageHealthThreshold;
-            
+
             if (shouldBeInRage && !isInRageMode)
             {
                 EnterRageMode();
+                PlayPhaseChangeSound();
             }
             else if (!shouldBeInRage && isInRageMode)
             {
                 ExitRageMode();
             }
+        }
+    }
+    void PlayPhaseChangeSound()
+    {
+        if (phaseChangeSound != null && audioSource != null)
+        {
+            if (audioSource.isPlaying && audioSource.clip == phaseChangeSound)
+            {
+                return;
+            }
+            audioSource.pitch = 1.0f;
+            audioSource.PlayOneShot(phaseChangeSound, phaseChangeVolume);
+
         }
     }
 
@@ -328,6 +384,16 @@ public class BossMovement : MonoBehaviour
 
         float distanceToPlayer = Vector3.Distance(transform.position, player.position);
 
+        float hpPct = GetHealthPct01();
+        if (enableRadialAtHalfHP && hpPct <= radialHealthThreshold && Time.time >= nextRadialTime && distanceToPlayer <= attackRange * 1.5f)
+        {
+            if (HasLineOfSight())
+            {
+                StartCoroutine(PerformRadialBurst());
+                nextRadialTime = Time.time + radialCooldown;
+            }
+        }
+
         if (distanceToPlayer <= attackRange && Time.time >= nextAttackTime)
         {
             if (HasLineOfSight())
@@ -353,6 +419,18 @@ public class BossMovement : MonoBehaviour
             }
         }
     }
+    float GetCurrentProjectileSpeed()
+    {
+        float speed = projectileSpeed;
+        if (!scaleProjectileSpeedByPhase || bossController == null) return speed;
+        int phase = GetPhaseIndex();
+        if (phase >= 0 && phase < phaseSpeedMultipliers.Length)
+        {
+            speed *= phaseSpeedMultipliers[phase];
+        }
+        return speed;
+    }
+    
 
     bool HasLineOfSight()
     {
@@ -374,7 +452,7 @@ public class BossMovement : MonoBehaviour
         }
 
         Transform spawnPoint = projectileSpawnPoints[Random.Range(0, projectileSpawnPoints.Length)];
-        Vector3 targetPosition = PredictPlayerPosition();
+        Vector3 targetPosition = PredictPlayerPosition() + Vector3.up * aimYOffset;
         Vector3 shootDirection = (targetPosition - spawnPoint.position).normalized;
 
         CreateProjectile(spawnPoint.position, shootDirection);
@@ -425,22 +503,88 @@ public class BossMovement : MonoBehaviour
         Rigidbody projectileRb = projectile.GetComponent<Rigidbody>();
         if (projectileRb != null)
         {
-            projectileRb.linearVelocity = direction * projectileSpeed;
+            projectileRb.linearVelocity = direction * GetCurrentProjectileSpeed();
         }
 
-        EnemyProjectile projectileScript = projectile.GetComponent<EnemyProjectile>();
+        BossProjectile projectileScript = projectile.GetComponent<BossProjectile>();
         if (projectileScript == null)
         {
-            projectileScript = projectile.AddComponent<EnemyProjectile>();
+            projectileScript = projectile.AddComponent<BossProjectile>();
+        }
+
+        if (boneProjectileSound != null && audioSource != null)
+        {
+            audioSource.pitch = Random.Range(minPitchVariation, maxPitchVariation);
+            audioSource.PlayOneShot(boneProjectileSound, boneProjectileVolume);
         }
 
         projectileScript.Initialize(attackDamage, projectileLifetime);
     }
+    void CreateProjectile(Vector3 spawnPosition, Vector3 direction, float speedOverride)
+    {
+        GameObject projectile = Instantiate(projectilePrefab, spawnPosition, Quaternion.LookRotation(direction));
 
+        Rigidbody projectileRb = projectile.GetComponent<Rigidbody>();
+        if (projectileRb != null)
+        {
+            projectileRb.linearVelocity = direction * speedOverride;
+        }
+        BossProjectile projectileScript = projectile.GetComponent<BossProjectile>();
+        if (projectileScript == null)
+        {
+            projectileScript = projectile.AddComponent<BossProjectile>();
+        }
+        if (boneProjectileSound != null && audioSource != null)
+        {
+            audioSource.pitch = Random.Range(minPitchVariation, maxPitchVariation);
+            audioSource.PlayOneShot(boneProjectileSound, boneProjectileVolume);
+        }
+        projectileScript.Initialize(attackDamage, projectileLifetime);
+    }
+    System.Collections.IEnumerator PerformRadialBurst()
+{
+    if (projectileSpawnPoints == null || projectileSpawnPoints.Length == 0) yield break;
+
+        if (radialAttackSound != null && audioSource != null)
+        {
+            audioSource.pitch = 1.0f;
+            audioSource.PlayOneShot(radialAttackSound, radialAttackVolume);
+    }
+
+
+    Transform spawnPoint = projectileSpawnPoints[Random.Range(0, projectileSpawnPoints.Length)];
+    float step = 360f / Mathf.Max(1, radialShotCount);
+    float baseSpeed = GetCurrentProjectileSpeed() * radialProjectileSpeedMultiplier;
+
+    Debug.Log($"Starting radial burst with {radialWaves} waves of {radialShotCount} shots each");
+
+    for (int wave = 0; wave < radialWaves; wave++)
+    {
+        Vector3 toPlayer = player ? (player.position - spawnPoint.position) : transform.forward;
+        toPlayer.y = 0f;
+        if (toPlayer.sqrMagnitude < 0.0001f) toPlayer = transform.forward;
+        float playerAngle = Mathf.Atan2(toPlayer.x, toPlayer.z) * Mathf.Rad2Deg;
+
+        float startAngle = wave * radialStartAngleOffsetPerWave;
+
+        int shotsFired = 0;
+        for (int i = 0; i < radialShotCount; i++)
+        {
+            float angle = startAngle + i * step;
+
+            float delta = Mathf.DeltaAngle(angle, playerAngle);
+            if (Mathf.Abs(delta) <= radialGapAngle) continue;
+            Vector3 dir = Quaternion.Euler(0f, angle, 0f) * Vector3.forward;
+            CreateProjectile(spawnPoint.position, dir, baseSpeed);
+            shotsFired++;
+        }
+        Debug.Log($"Wave {wave + 1} fired {shotsFired} shots");
+        yield return new WaitForSeconds(radialWaveInterval);
+    }
+}
     Vector3 PredictPlayerPosition()
     {
         if (player == null) return Vector3.zero;
-
         Rigidbody playerRb = player.GetComponent<Rigidbody>();
         CharacterController playerController = player.GetComponent<CharacterController>();
 
@@ -454,9 +598,42 @@ public class BossMovement : MonoBehaviour
         {
             playerVelocity = playerController.velocity;
         }
-
-        float timeToTarget = Vector3.Distance(transform.position, player.position) / projectileSpeed;
+        float timeToTarget = Vector3.Distance(transform.position, player.position) / GetCurrentProjectileSpeed();
         return player.position + playerVelocity * timeToTarget;
+    }
+
+    int GetPhaseIndex()
+    {
+        float hp = GetHealthPct01();
+        int currentPhase = -1;
+
+
+        for (int i = 0; i < phaseHealthThreshold.Length; i++)
+        {
+            if (hp > phaseHealthThreshold[i])
+            {
+                currentPhase = i;
+                break;
+            }
+        }
+        if (currentPhase == -1)
+        {
+            currentPhase = phaseHealthThreshold.Length;
+        }
+        if (previousPhase != -1 && previousPhase != currentPhase)
+        {
+            PlayPhaseChangeSound();
+        }
+        previousPhase = currentPhase;
+        return currentPhase;
+    }
+    float GetHealthPct01()
+    {
+        if (bossController == null) return 1f;
+        float v = bossController.GetHealthPercentage();
+
+        if (v > 1f) v *= 0.01f;
+        return Mathf.Clamp01(v);
     }
 
     Vector3 CalculateMovementDirection(Vector3 directionToTarget)

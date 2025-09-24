@@ -54,6 +54,10 @@ public class Dreamer : MonoBehaviour
     public float titleDisplayDuration = 2f;
     public float descriptionDisplayDuration = 3f;
 
+    [Header("Boss Fight UI")]
+    public GameObject bossFightUI;
+    public Slider bossHealthSlider;
+
     [Header("Dice Roll Progress")]
     public Slider diceRollProgressSlider;
 
@@ -85,6 +89,14 @@ public class Dreamer : MonoBehaviour
     private Coroutine shatteredRealityTransitionCoroutine;
     private Coroutine cerebralPainTransitionCoroutine;
     private Coroutine pitchTransitionCoroutine;
+    private Coroutine neuralTwistVisualCoroutine;
+    private float baseHueShift, baseSaturation, baseContrast, baseLensIntensity;
+
+    private Coroutine flickerSequenceRoutine;
+    private Coroutine slowMoRoutine;
+    private Coroutine eyesShockedRoutine;
+    private Coroutine abilityQueueRoutine;
+    private Coroutine activeAbilityRoutine;
 
     private float originalFogDensity = 0.01f;
     private bool fogSettingsStored = false;
@@ -117,6 +129,7 @@ public class Dreamer : MonoBehaviour
     private float originalChromaticAberrationIntensity;
     private bool originalChromaticAberrationActive;
 
+
     [Header("Dyslexic Dreamer Settings")]
     public PlayerMotor playerMotor;
     public float neuralTwistTransitionDuration = 1f;
@@ -140,6 +153,9 @@ public class Dreamer : MonoBehaviour
     public int wavesBeforeBoss = 5;
     public float bossFightCooldown = 5f;
     public GameObject bossPrefab;
+    public float bossSpawnDelay = 10f;
+    public AudioClip bossSpawnWarningSound;
+    public AudioSource bossWarningAudioSource;
 
     private int currentWaveCount = 0;
     private bool isBossFightActive = false;
@@ -208,6 +224,10 @@ public class Dreamer : MonoBehaviour
         if (globalVolume != null && globalVolume.profile.TryGet<ColorAdjustments>(out colorAdjustments))
         {
             colorAdjustments.saturation.value = 0f;
+
+            baseHueShift = colorAdjustments.hueShift.value;
+            baseSaturation = colorAdjustments.saturation.value;
+            baseContrast = colorAdjustments.contrast.value;
         }
         else
         {
@@ -216,6 +236,7 @@ public class Dreamer : MonoBehaviour
         if (globalVolume != null && globalVolume.profile.TryGet<LensDistortion>(out lensDistortion))
         {
             lensDistortion.intensity.value = 0f;
+            baseLensIntensity = lensDistortion.intensity.value;
         }
         else
         {
@@ -274,6 +295,10 @@ public class Dreamer : MonoBehaviour
         if (abilityUIPanel != null)
         {
             abilityUIPanel.SetActive(false);
+        }
+        if (bossFightUI != null)
+        {
+            bossFightUI.SetActive(false);
         }
         if (eyesOpenImage != null)
         {
@@ -346,8 +371,13 @@ public class Dreamer : MonoBehaviour
     }
     IEnumerator ForceBossFight()
     {
+        yield return new WaitForSeconds(bossSpawnDelay);
+
+        if (abilityUIPanel != null)
+        {
+            abilityUIPanel.SetActive(false);
+        }
         StartCoroutine(StartBossFight());
-        yield return null;
 
     }
     IEnumerator ForceDiceRoll()
@@ -459,6 +489,8 @@ public class Dreamer : MonoBehaviour
         isBossFightActive = true;
         currentWaveCount = 0;
 
+        CancelDiceAndAbilitiesForBoss();
+
         if (WavesManager.Instance != null)
         {
             WavesManager.Instance.SetBossFightMode(true);
@@ -467,29 +499,40 @@ public class Dreamer : MonoBehaviour
         {
             Debug.LogWarning("BRUHGHGHGH THERE IS NO WAVESmANAGER HERE");
         }
+        if (abilityUIPanel != null)
+        {
+            abilityUIPanel.SetActive(false);
+        }
+        
+        yield return new WaitUntil(() => WavesManager.Instance != null && WavesManager.Instance.IsBossFightActive());
+
+        float halfwayPoint = bossSpawnDelay / 2f;
+        yield return new WaitForSeconds(halfwayPoint);
+
+        if (bossSpawnWarningSound != null && bossWarningAudioSource != null)
+        {
+            bossWarningAudioSource.PlayOneShot(bossSpawnWarningSound);
+        }
+
+        yield return new WaitForSeconds(halfwayPoint);
+        if (abilityUIPanel != null)
+        {
+            abilityUIPanel.SetActive(false);
+        }
+
         if (cameraShake != null)
         {
             StartCoroutine(cameraShake.Shake(1f, 0.4f));
-        }
-
-
-        if (abilityTitleText != null)
-        {
-            abilityUIPanel.SetActive(true);
-            abilityTitleText.text = "<color=red><shake><size=150%>BOSS FIGHT!</size></shake></color>";
-            abilityTitleText.gameObject.SetActive(true);
-
-            if (abilityDescriptionText != null)
-            {
-                abilityDescriptionText.text = "<color=yellow>Defeat the boss to continue!</color>";
-                abilityDescriptionText.gameObject.SetActive(true);
-            }
         }
         if (bossPrefab != null && spawnPoint != null)
         {
             Vector3 bossSpawnPosition = spawnPoint.position + Vector3.up * 5f;
             GameObject bossObject = Instantiate(bossPrefab, bossSpawnPosition, Quaternion.identity);
             currentBoss = bossObject.GetComponent<BossController>();
+            if (bossHealthSlider != null)
+            {
+                currentBoss.SetHealthSlider(bossHealthSlider);
+            }
 
             if (currentBoss == null)
             {
@@ -499,17 +542,20 @@ public class Dreamer : MonoBehaviour
             //StartCoroutine(BossFightVisualEffects());
             //StartCoroutine(BossFightDiceSpawning());
 
-            yield return new WaitForSeconds(2f);
-
-            if (abilityUIPanel != null)
-            {
-                abilityUIPanel.SetActive(false);
-            }
+            
         }
     }
     public void OnBossSpawned(BossController boss)
     {
         currentBoss = boss;
+        if (currentBoss != null && bossHealthSlider != null)
+        {
+            currentBoss.SetHealthSlider(bossHealthSlider);
+        }
+        if (bossFightUI != null)
+        {
+            bossFightUI.SetActive(true);
+        }
     }
     public void OnBossDefeated()
     {
@@ -522,6 +568,10 @@ public class Dreamer : MonoBehaviour
         {
             WavesManager.Instance.SetBossFightMode(false);
         }
+        if (bossFightUI != null)
+        {
+            bossFightUI.SetActive(false);
+        }
 
         if (abilityTitleText != null)
         {
@@ -531,7 +581,7 @@ public class Dreamer : MonoBehaviour
 
             if (abilityDescriptionText != null)
             {
-                abilityDescriptionText.text = "Boss defated! Preparing for next wave...";
+                abilityDescriptionText.text = "Boss defeated! Catch your breath...";
                 abilityDescriptionText.gameObject.SetActive(true);
             }
         }
@@ -624,14 +674,16 @@ public class Dreamer : MonoBehaviour
         {
             return;
         }
-        StartCoroutine(FlickerEffectSequence());
+        if (flickerSequenceRoutine != null) StopCoroutine(flickerSequenceRoutine);
+        flickerSequenceRoutine = StartCoroutine(FlickerEffectSequence());
     }
 
     IEnumerator FlickerEffectSequence()
     {
 
-        if (isBossFightActive && isBossFightCooldownActive)
+        if (isBossFightActive || isBossFightCooldownActive)
         {
+            flickerSequenceRoutine = null;
             yield break;
         }
 
@@ -639,10 +691,11 @@ public class Dreamer : MonoBehaviour
 
         yield return new WaitForSeconds(flickerDuration);
 
-        StartCoroutine(SlowMotionEffect());
-        StartCoroutine(ShowEyesShocked());
+        if (slowMoRoutine != null) StopCoroutine(slowMoRoutine);
+        slowMoRoutine = StartCoroutine(SlowMotionEffect());
 
-        
+        if (eyesShockedRoutine != null) StopCoroutine(eyesShockedRoutine);
+        eyesShockedRoutine = StartCoroutine(ShowEyesShocked());
 
         if (spawnMultipleDice)
         {
@@ -670,13 +723,15 @@ public class Dreamer : MonoBehaviour
         }
         if (enableAbilities && !isBossFightActive)
         {
-            StartCoroutine(QueueAbility());
+            if (abilityQueueRoutine != null) StopCoroutine(abilityQueueRoutine);
+            abilityQueueRoutine = StartCoroutine(QueueAbility());
         }
+        flickerSequenceRoutine = null;
     }
 
     IEnumerator QueueAbility()
     {
-        if (availableAbilities.Count == 0)
+        if (availableAbilities.Count == 0 || isBossFightActive || isBossFightCooldownActive)
         {
             yield break;
         }
@@ -706,15 +761,22 @@ public class Dreamer : MonoBehaviour
 
         yield return new WaitForSeconds(1f);
 
-        StartCoroutine(ActiveQueuedAbility());
+        if (activeAbilityRoutine != null) StopCoroutine(activeAbilityRoutine);
+        activeAbilityRoutine = StartCoroutine(ActiveQueuedAbility());
     }
 
     IEnumerator ActiveQueuedAbility()
     {
+        if (isBossFightActive || isBossFightCooldownActive)
+        {
+            yield break;
+        }
+
         abilityQueued = false;
         abilityActive = true;
 
-        float abilityDuration;
+        float abilityDuration = (enableTestingmode && overrideAbilityDuration) ? testAbilityDuration : Random.Range(minAbilityDuration, maxAbilityDuration);
+
         if (enableTestingmode && overrideAbilityDuration)
         {
             abilityDuration = testAbilityDuration;
@@ -724,13 +786,20 @@ public class Dreamer : MonoBehaviour
             abilityDuration = Random.Range(minAbilityDuration, maxAbilityDuration);
         }
         ApplyAbilityEffect(currentAbility, true);
-        yield return new WaitForSeconds(abilityDuration);
+
+        float elapsed = 0f;
+        while (elapsed < abilityDuration && !isBossFightActive && !isBossFightCooldownActive)
+        {
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
 
         ApplyAbilityEffect(currentAbility, false);
         StartCoroutine(TransitionMusicPitch(originalPitch));
 
         abilityActive = false;
         currentAbility = null;
+        activeAbilityRoutine = null;
 
     }
     DreamAbility GetAbilityByType(AbilityType abilityType)
@@ -917,12 +986,89 @@ public class Dreamer : MonoBehaviour
         }
         if (activate)
         {
+            if (neuralTwistVisualCoroutine != null)
+            {
+                StopCoroutine(neuralTwistVisualCoroutine);
+
+            }
+            neuralTwistVisualCoroutine = StartCoroutine(NeuralTwistVisualLoop());
+
             StartCoroutine(SmoothNeuralTwistTransition(true));
 
         }
         else
         {
+            if (neuralTwistVisualCoroutine != null)
+            {
+                StopCoroutine(neuralTwistVisualCoroutine);
+                neuralTwistVisualCoroutine = null;
+            }
+            ResetNeuralTwistVisuals();
             StartCoroutine(SmoothNeuralTwistTransition(false));
+        }
+    }
+    IEnumerator NeuralTwistVisualLoop()
+    {
+        if (colorAdjustments == null && lensDistortion == null) yield break;
+
+        while (abilityActive && currentAbility != null && currentAbility.abilityType == AbilityType.NeuralTwist)
+        {
+            float elapsed = 0f;
+            float effectDuration = neuralTwistTransitionDuration;
+            float localBaseHue = colorAdjustments != null ? colorAdjustments.hueShift.value : 0f;
+            float localBaseSat = colorAdjustments != null ? colorAdjustments.saturation.value : 0f;
+            float localBaseCon = colorAdjustments != null ? colorAdjustments.contrast.value : 0f;
+            float localBaseLens = lensDistortion != null ? lensDistortion.intensity.value : 0f;
+
+            while (elapsed < effectDuration && abilityActive && currentAbility != null && currentAbility.abilityType == AbilityType.NeuralTwist)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float progress = Mathf.Clamp01(elapsed / effectDuration);
+
+                if (colorAdjustments != null)
+                {
+                    float hueShift = Mathf.Sin(progress * Mathf.PI * 12f) * 360f;
+                    colorAdjustments.hueShift.value = hueShift;
+
+                    float saturationPulse = Mathf.Sin(progress * Mathf.PI * 8f) * 100f;
+                    colorAdjustments.saturation.value = saturationPulse;
+
+                    float contrastFlash = Mathf.Sin(progress * Mathf.PI * 16f) > 0.5f ? 50f : -20f;
+                    colorAdjustments.contrast.value = contrastFlash;
+                }
+                if (lensDistortion != null)
+                {
+                    float distortionPulse = Mathf.Sin(progress * Mathf.PI * 3f) * 0.5f;
+                    lensDistortion.intensity.value = localBaseLens + distortionPulse;
+                }
+                yield return null;
+            }
+            if (colorAdjustments != null)
+            {
+                colorAdjustments.hueShift.value = localBaseHue;
+                colorAdjustments.saturation.value = localBaseSat;
+                colorAdjustments.contrast.value = localBaseCon;
+            }
+            if (lensDistortion != null)
+            {
+                lensDistortion.intensity.value = localBaseLens;
+            }
+            yield return null;
+        }
+        ResetNeuralTwistVisuals();
+        neuralTwistVisualCoroutine = null;
+    }
+    void ResetNeuralTwistVisuals()
+    {
+        if (colorAdjustments != null)
+        {
+            colorAdjustments.hueShift.value = baseHueShift;
+            colorAdjustments.saturation.value = baseSaturation;
+            colorAdjustments.contrast.value = baseContrast;
+        }
+        if (lensDistortion != null)
+        {
+            lensDistortion.intensity.value = baseLensIntensity;
         }
     }
 
@@ -1209,7 +1355,7 @@ public class Dreamer : MonoBehaviour
 
     IEnumerator SpawnCrazyDice(int diceCount)
     {
-        if (isBossFightActive && isBossFightCooldownActive)
+        if (isBossFightActive || isBossFightCooldownActive)
         {
             yield break;
         }
@@ -1234,6 +1380,63 @@ public class Dreamer : MonoBehaviour
             spawned += currentBatch;
 
             yield return new WaitForSeconds(0.1f);
+        }
+    }
+    private void CancelDiceAndAbilitiesForBoss()
+    {
+        if (flickerSequenceRoutine != null)
+        {
+            StopCoroutine(flickerSequenceRoutine);
+            flickerSequenceRoutine = null;
+        }
+        if (slowMoRoutine != null)
+        {
+            StopCoroutine(slowMoRoutine);
+            slowMoRoutine = null;
+            Time.timeScale = 1f;
+            Time.fixedDeltaTime = 0.02f;
+        }
+        if (eyesShockedRoutine != null)
+        {
+            StopCoroutine(eyesShockedRoutine);
+            eyesShockedRoutine = null;
+        }
+        if (abilityQueueRoutine != null)
+        {
+            StopCoroutine(abilityQueueRoutine);
+            abilityQueueRoutine = null;
+        }
+        if (abilityActive && currentAbility != null)
+        {
+            ApplyAbilityEffect(currentAbility, false);
+            abilityActive = false;
+            currentAbility = null;
+        }
+        abilityQueued = false;
+        isDiceRollActive = false;
+
+        if (neuralTwistVisualCoroutine != null)
+        {
+            StopCoroutine(neuralTwistVisualCoroutine);
+            neuralTwistVisualCoroutine = null;
+        }
+        ResetNeuralTwistVisuals();
+
+        if (pitchTransitionCoroutine != null)
+        {
+            StopCoroutine(pitchTransitionCoroutine);
+        }
+        if (backgroundMusic != null)
+        {
+            backgroundMusic.pitch = originalPitch;
+        }
+        if (eyesShockedImage != null)
+        {
+            eyesShockedImage.SetActive(false);
+        }
+        if (eyesClosedImage != null)
+        {
+            eyesClosedImage.SetActive(false);
         }
     }
 
@@ -1428,6 +1631,7 @@ public class Dreamer : MonoBehaviour
 
         Time.timeScale = 1f;
         Time.fixedDeltaTime = 0.02f;
+        slowMoRoutine = null;
     }
 
     IEnumerator ShowEyesShocked()
@@ -1457,6 +1661,7 @@ public class Dreamer : MonoBehaviour
             eyesClosedImage.SetActive(true);
         }
         StartCoroutine(HandleEyesAfterDice());
+        eyesShockedRoutine = null;
     }
 
     IEnumerator HandleEyesAfterDice()

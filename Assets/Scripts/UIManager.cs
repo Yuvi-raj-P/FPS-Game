@@ -30,10 +30,31 @@ public class UIManager : MonoBehaviour
     public Image damageIndicator;
     public float damageIndicatorDuration = 0.5f;
     public float damageIndicatorFadeSpeed = 3f;
-    
+
+    [Header("Survival Time")]
+    public float survivalTime = 0f;
+
+
     [Header("Damage Status")]
     public bool hasTakenDamage = false;
-    
+
+
+    [Header("Pause Menu")]
+    public GameObject pauseMenuPanel;
+    public Button resumeButton;
+    public Button mainMenuButton;
+    public string mainMenuSceneName = "StartMenu";
+    public LevelLoader levelLoader;
+    private bool isPaused = false;
+
+
+    [Header("Sensitivity Settings")]
+    public Slider xSensitivitySlider;
+    public Slider ySensitivitySlider;
+    public TextMeshProUGUI xSensitivityValueText;
+    public TextMeshProUGUI ySensitivityValueText;
+    public PlayerLook playerLook;
+
     public static bool IsBlackoutActive { get; private set; }
     private Coroutine blackoutCoroutine;
     private Coroutine damageIndicatorCoroutine;
@@ -56,6 +77,9 @@ public class UIManager : MonoBehaviour
 
     void Start()
     {
+        SetupSensitivitySliders();
+        SetupPauseMenu();
+
         hasTakenDamage = false;
 
         if (playerHealth != null && healthSlider != null)
@@ -83,33 +107,122 @@ public class UIManager : MonoBehaviour
             damageIndicator.color = new Color(damageIndicator.color.r, damageIndicator.color.g, damageIndicator.color.b, 0);
         }
     }
+    void SetupPauseMenu()
+    {
+        if (pauseMenuPanel != null)
+        {
+            pauseMenuPanel.SetActive(false);
+        }
+        if (resumeButton != null)
+        {
+            resumeButton.onClick.AddListener(ResumeGame);
+        }
+        if (mainMenuButton != null)
+        {
+            mainMenuButton.onClick.AddListener(ReturnToMainMenu);
+        }
+    }
+    void SetupSensitivitySliders()
+    {
+
+        if (playerLook == null)
+        {
+            Debug.LogError("PlayerLook is NOT FOUND");
+            return;
+        }
+        if (xSensitivitySlider != null)
+        {
+            xSensitivitySlider.value = playerLook.GetNormalizedXSensitivity();
+
+            xSensitivitySlider.onValueChanged.AddListener(OnXSensitivityChanged);
+
+            UpdateXSensitivityText(xSensitivitySlider.value);
+        }
+
+        if (ySensitivitySlider != null)
+        {
+            ySensitivitySlider.value = playerLook.GetNormalizedYSensitivity();
+
+            ySensitivitySlider.onValueChanged.AddListener(OnYSensitivityChanged);
+
+            UpdateYSensitivityText(ySensitivitySlider.value);
+        }
+    }
+    public void OnXSensitivityChanged(float value)
+    {
+        if (playerLook != null)
+        {
+            playerLook.SetXSensitivity(value);
+            UpdateXSensitivityText(value);
+        }
+    }
+    public void OnYSensitivityChanged(float value)
+    {
+        if (playerLook != null)
+        {
+            playerLook.SetYSensitivity(value);
+            UpdateYSensitivityText(value);
+        }
+    }
+    private void UpdateXSensitivityText(float normalizedValue)
+    {
+        if (xSensitivityValueText != null)
+        {
+            int sensitivityPercent = Mathf.RoundToInt(normalizedValue * 100);
+            xSensitivityValueText.text = sensitivityPercent.ToString();
+        }
+    }
+    private void UpdateYSensitivityText(float normalizedValues)
+    {
+        if (ySensitivityValueText != null)
+        {
+            int sensitivityPercent = Mathf.RoundToInt(normalizedValues * 100);
+            ySensitivityValueText.text = sensitivityPercent.ToString();
+        }
+    }
 
     void Update()
     {
-        killCountText.text = killCount.ToString("0");
-        healthText.text = playerHealth.currentHealth.ToString("0");
-        armorText.text = playerHealth.currentArmor.ToString("0");
-        if (playerHealth != null && healthSlider != null && armorSlider != null)
+        if (Input.GetKeyDown(KeyCode.Escape))
         {
-            if (playerHealth.currentHealth < previousHealth || playerHealth.currentArmor < previousArmor)
-            {
-                hasTakenDamage = true;
-                TriggerDamageIndicator();
-            }
-            healthSlider.value = playerHealth.currentHealth;
-            armorSlider.value = playerHealth.currentArmor;
+            TogglePauseMenu();
+        }
+        if (!isPaused)
+        {
+            killCountText.text = killCount.ToString("0");
+            PlayerPrefs.SetInt("KillCount", killCount);
 
-            previousHealth = playerHealth.currentHealth;
-            previousArmor = playerHealth.currentArmor;
-        }
-        if (weaponSwitching != null)
-        {
-            if (previousSelectedWeapon != weaponSwitching.selectedWeapon)
+            if (playerHealth.currentHealth > 0)
             {
-                UpdateWeaponDisplay();
-                previousSelectedWeapon = weaponSwitching.selectedWeapon;
+                survivalTime += Time.deltaTime;
+                PlayerPrefs.SetFloat("SurvivalTime", survivalTime);
+            }
+
+            healthText.text = playerHealth.currentHealth.ToString("0");
+            armorText.text = playerHealth.currentArmor.ToString("0");
+            if (playerHealth != null && healthSlider != null && armorSlider != null)
+            {
+                if (playerHealth.currentHealth < previousHealth || playerHealth.currentArmor < previousArmor)
+                {
+                    hasTakenDamage = true;
+                    TriggerDamageIndicator();
+                }
+                healthSlider.value = playerHealth.currentHealth;
+                armorSlider.value = playerHealth.currentArmor;
+
+                previousHealth = playerHealth.currentHealth;
+                previousArmor = playerHealth.currentArmor;
+            }
+            if (weaponSwitching != null)
+            {
+                if (previousSelectedWeapon != weaponSwitching.selectedWeapon)
+                {
+                    UpdateWeaponDisplay();
+                    previousSelectedWeapon = weaponSwitching.selectedWeapon;
+                }
             }
         }
+
     }
     void UpdateWeaponDisplay()
     {
@@ -196,48 +309,99 @@ public class UIManager : MonoBehaviour
         damageIndicatorCoroutine = null;
     }
     private IEnumerator DamageIndicatorEffectDebug()
-{
-    Debug.Log("DamageIndicatorEffect started");
-    
-    if (damageIndicator == null)
     {
-        Debug.LogError("Damage indicator is null!");
-        yield break;
-    }
-    
-    Debug.Log($"Damage indicator active: {damageIndicator.gameObject.activeInHierarchy}");
-    Debug.Log($"Damage indicator canvas group: {damageIndicator.GetComponent<CanvasGroup>()}");
-    
-    Color color = damageIndicator.color;
-    Debug.Log($"Original color: {color}");
-    
-    color.a = 1f;
-    damageIndicator.color = color;
-    
-    Debug.Log($"Set color to: {damageIndicator.color}");
-    Debug.Log($"Damage indicator enabled: {damageIndicator.enabled}");
+        Debug.Log("DamageIndicatorEffect started");
 
-    yield return new WaitForSeconds(damageIndicatorDuration);
+        if (damageIndicator == null)
+        {
+            Debug.LogError("Damage indicator is null!");
+            yield break;
+        }
 
-    float fadeTimer = 0f;
-    float fadeDuration = 1f / damageIndicatorFadeSpeed;
+        Debug.Log($"Damage indicator active: {damageIndicator.gameObject.activeInHierarchy}");
+        Debug.Log($"Damage indicator canvas group: {damageIndicator.GetComponent<CanvasGroup>()}");
 
-    while (fadeTimer < fadeDuration)
-    {
-        fadeTimer += Time.deltaTime;
-        color.a = Mathf.Lerp(1f, 0f, fadeTimer / fadeDuration);
+        Color color = damageIndicator.color;
+        Debug.Log($"Original color: {color}");
+
+        color.a = 1f;
         damageIndicator.color = color;
-        yield return null;
+
+        Debug.Log($"Set color to: {damageIndicator.color}");
+        Debug.Log($"Damage indicator enabled: {damageIndicator.enabled}");
+
+        yield return new WaitForSeconds(damageIndicatorDuration);
+
+        float fadeTimer = 0f;
+        float fadeDuration = 1f / damageIndicatorFadeSpeed;
+
+        while (fadeTimer < fadeDuration)
+        {
+            fadeTimer += Time.deltaTime;
+            color.a = Mathf.Lerp(1f, 0f, fadeTimer / fadeDuration);
+            damageIndicator.color = color;
+            yield return null;
+        }
+
+        color.a = 0f;
+        damageIndicator.color = color;
+        damageIndicatorCoroutine = null;
+
+        Debug.Log("DamageIndicatorEffect finished");
     }
 
-    color.a = 0f;
-    damageIndicator.color = color;
-    damageIndicatorCoroutine = null;
-    
-    Debug.Log("DamageIndicatorEffect finished");
-}
-
-    public void AddKill(){
+    public void AddKill()
+    {
         killCount++;
+    }
+    public void PauseGame()
+    {
+        if (pauseMenuPanel != null)
+        {
+            pauseMenuPanel.SetActive(true);
+        }
+        Time.timeScale = 0f;
+
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+    }
+    public void TogglePauseMenu()
+    {
+        isPaused = !isPaused;
+
+        if (isPaused)
+        {
+            PauseGame();
+        }
+        else
+        {
+            ResumeGame();
+        }
+    }
+    public void ResumeGame()
+    {
+        if (pauseMenuPanel != null)
+        {
+            pauseMenuPanel.SetActive(false);
+        }
+
+        Time.timeScale = 1f;
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
+
+        isPaused = false;
+    }
+    public void ReturnToMainMenu()
+    {
+        Time.timeScale = 1f;
+
+        if (levelLoader != null)
+        {
+            levelLoader.LoadSpecificLevel(mainMenuSceneName);
+        }
+        else
+        {
+            Debug.LogWarning("LevelLoader not found");
+        }
     }
 }
