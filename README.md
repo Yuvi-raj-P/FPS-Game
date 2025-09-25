@@ -5,6 +5,10 @@
   <br />
   <br />
   <a href="#"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License: MIT"></a>
+	<br>
+	<a href="https://yuvi-raj-p.github.io/Insominia/">Play Here</a>
+	<br>
+  
 </p>
 
 
